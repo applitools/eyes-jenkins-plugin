@@ -136,6 +136,10 @@ The Design review check is **always posted** once the feature is on, even when i
 
 **Plugin follow-up:** if NLP needs particular container setup, document it in the setup guide (Phase 6).
 
+### Several `applitools` blocks in one build share a batch ID
+
+Each block defaults its batch ID to the commit SHA. A second block in the same build reuses that ID after the first block closed the batch, so Eyes starts a new batch under the same pointer, and the second block's results and review entry replace the first's. **Workaround (documented in SETUP.md):** put all visual tests in one block. **Fix:** suffix the batch ID per block (e.g. `<sha>-2`), and keep one review entry per block.
+
 ## Not in scope (for now)
 
 - A review UI inside Jenkins (designers review in Eyes).
