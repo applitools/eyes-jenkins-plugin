@@ -99,9 +99,9 @@ The Design review check is **always posted** once the feature is on, even when i
 | Phase | Scope | Status |
 | --- | --- | --- |
 | **0. Sandbox** | GitHub App, smee relay, signed webhooks, multibranch job, Checks API posting | ✅ Done |
-| **1. Run** | `applitools {}`: credentials, masking, SCM detection (GitHub + env fallback), batch close, nested/parallel | ✅ Committed; real Eyes run pending |
-| **2. Results** | Fetch batch results, build page summary and link, `applitoolsResults()`, `onChanges` policy, `waitForResults` | Next |
-| **3. Visual tests check** | Post the check from results, Details link to Eyes, optional PR comment | |
+| **1. Run** | `applitools {}`: credentials, masking, SCM detection (GitHub + env fallback), batch close, nested/parallel | ✅ Verified on a real PR |
+| **2. Results** | Fetch batch results (read key), build page summary and link, `applitoolsResults()`, `onChanges` policy, `waitForResults` | ✅ Verified on a real PR |
+| **3. Visual tests check** | Post the check from results, Details link to Eyes, optional PR comment | In progress |
 | **4. Design review gate** | Flag detection, Design review check, background watcher, label webhooks, designer identity, `applitoolsAwaitReview` | |
 | **5. Baseline lifecycle** | Merge branch baselines on PR merge, `autoAcceptOn` | |
 | **6. Setup experience** | Test connection, setup checklist page, JCasC, sample Jenkinsfiles, 5-step guide | |
@@ -116,6 +116,25 @@ The Design review check is **always posted** once the feature is on, even when i
 5. **Baseline merge:** the API to merge a branch baseline into its parent (Phase 5).
 6. **Auth header:** can the API key go in a header instead of the `apiKey` query parameter?
 7. **Re-runs:** what happens when a closed batch's pointer ID is reused by a re-run of the same commit?
+
+## Parked: come back after the MVP
+
+### Eyes NLP hangs the Playwright SDK in our Podman agent (found 2026-10-20)
+
+**Symptom:** with NLP enabled on the account, `eyes-playwright` launches Chromium with a remote-debugging port. The test passes, but no checkpoint reaches Eyes: every Ultrafast Grid session is aborted with 0 steps. The worker then fails with `RequestTimeoutError: Request timed out, likely because it was stuck` (from `normalizeAbortError` in `@applitools/req`).
+
+**Isolated:** fails 3 of 3 times with NLP on and passes the first time with `eyesConfig.nlpOptions.enabled: false`. Memory (2 GB vs 6 GB) and network ruled out.
+
+**Workaround in place:** the sandbox repo sets `nlpOptions: { enabled: false }` (commit `b1c6309` on `test-fire`).
+
+**Leading theory:** container-specific. The Podman agent may lack what NLP's remote-debugging attach needs (sandboxing flags, `/dev/shm` size, reachable debugging port). Check before reporting to R&D:
+1. Run the same test on macOS with NLP on. Does it pass?
+2. If yes, retry in the container with `--shm-size=1g` and/or `--ipc=host`, and check Chromium's sandbox flags.
+3. Report to R&D with the result.
+
+**Details for R&D:** `@applitools/eyes-playwright` 1.51.2, `@applitools/core` 4.73.0, `@applitools/req` 1.11.5, `@playwright/test` 1.64.1, Node 22.23. Ultrafast Grid: Chrome, Firefox, Safari, iPhone 15, `fully: true`. Failing batches `00000251609776582785`, `00000251609775668285`, `00000251609775028435`; passing batch `00000251609774741653`.
+
+**Plugin follow-up:** if NLP needs particular container setup, document it in the setup guide (Phase 6).
 
 ## Not in scope (for now)
 
