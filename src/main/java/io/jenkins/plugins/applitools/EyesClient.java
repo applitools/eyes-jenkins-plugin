@@ -74,8 +74,9 @@ public class EyesClient {
     }
 
     /**
-     * Who accepted this session's changes: users whose accept of a step's baseline came from this very session
-     * ({@code expectedAppOutput[].lastAccept.sessionId}). Empty if nothing in it was accepted, or not saved yet.
+     * Who accepted this session's changes: users whose accept came from this very session. Reviews are recorded in
+     * {@code appOutputResolution[].lastAccept} once a session is resolved; {@code expectedAppOutput} is the baseline as
+     * it was when the test ran, so it only names earlier sessions. Empty if nothing was accepted (or saved) yet.
      */
     @NonNull
     public java.util.Set<String> sessionApprovers(@NonNull String eyesBatchId, @NonNull String sessionId)
@@ -85,12 +86,12 @@ public class EyesClient {
                 .GET());
         requireSuccess(response, "reading session " + sessionId);
         java.util.Set<String> users = new java.util.TreeSet<>();
-        net.sf.json.JSONArray expected = json(response).optJSONArray("expectedAppOutput");
-        if (expected != null) {
-            for (int i = 0; i < expected.size(); i++) {
-                JSONObject accept = expected.optJSONObject(i) != null
-                        ? expected.getJSONObject(i).optJSONObject("lastAccept")
-                        : null;
+        JSONObject session = json(response);
+        for (String field : new String[] {"appOutputResolution", "expectedAppOutput"}) {
+            net.sf.json.JSONArray outputs = session.optJSONArray(field);
+            for (int i = 0; outputs != null && i < outputs.size(); i++) {
+                JSONObject output = outputs.optJSONObject(i);
+                JSONObject accept = output != null ? output.optJSONObject("lastAccept") : null;
                 if (accept != null && sessionId.equals(accept.optString("sessionId")) && accept.has("user")) {
                     users.add(accept.getString("user"));
                 }

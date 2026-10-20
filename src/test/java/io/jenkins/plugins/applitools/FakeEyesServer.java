@@ -72,15 +72,17 @@ final class FakeEyesServer implements AutoCloseable {
             respond(exchange, 200, "{\"runningCount\":" + running + "}");
         } else if (method.equals("GET") && session.matches() && !path.endsWith("/bypointerid")) {
             String sessionId = session.group(2);
-            StringBuilder outputs = new StringBuilder();
+            // Like real Eyes: reviews show up in appOutputResolution once resolved; expectedAppOutput is the baseline
+            // snapshot from when the test ran, accepted in an earlier session, and must not count as approval.
+            StringBuilder resolutions = new StringBuilder();
             for (String user : approvals.getOrDefault(sessionId, List.of())) {
-                outputs.append(outputs.length() > 0 ? "," : "")
-                        .append("{\"lastAccept\":{\"user\":\"%s\",\"sessionId\":\"%s\"}}".formatted(user, sessionId));
+                resolutions.append(resolutions.length() > 0 ? "," : "")
+                        .append("{\"isManuallyRejected\":false,\"lastAccept\":{\"user\":\"%s\",\"sessionId\":\"%s\"}}"
+                                .formatted(user, sessionId));
             }
-            // A baseline accepted in an earlier session must not count as approval of this one.
-            outputs.append(outputs.length() > 0 ? "," : "")
-                    .append("{\"lastAccept\":{\"user\":\"old@example.com\",\"sessionId\":\"earlier\"}}");
-            respond(exchange, 200, "{\"id\":\"" + sessionId + "\",\"expectedAppOutput\":[" + outputs + "]}");
+            respond(exchange, 200, "{\"id\":\"" + sessionId + "\","
+                    + "\"expectedAppOutput\":[{\"lastAccept\":{\"user\":\"old@example.com\",\"sessionId\":\"earlier\"}}],"
+                    + "\"appOutputResolution\":[" + resolutions + "]}");
         } else {
             respond(exchange, 404, null);
         }
