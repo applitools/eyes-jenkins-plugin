@@ -45,6 +45,26 @@
   </dependencyManagement>
 
   <dependencies>
+    <dependency>
+      <groupId>org.jenkins-ci.plugins</groupId>
+      <artifactId>credentials</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>org.jenkins-ci.plugins</groupId>
+      <artifactId>plain-credentials</artifactId>
+    </dependency>
+    <!-- Reused for masking the API key in build logs. -->
+    <dependency>
+      <groupId>org.jenkins-ci.plugins</groupId>
+      <artifactId>credentials-binding</artifactId>
+    </dependency>
+    <!-- Optional: richer PR detection (real PR head SHA, owner/repo) on GitHub multibranch jobs. -->
+    <dependency>
+      <groupId>org.jenkins-ci.plugins</groupId>
+      <artifactId>github-branch-source</artifactId>
+      <optional>true</optional>
+    </dependency>
+
     <!-- Test-only: lets JenkinsRule run Pipeline jobs that call our step. -->
     <dependency>
       <groupId>org.jenkins-ci.plugins.workflow</groupId>

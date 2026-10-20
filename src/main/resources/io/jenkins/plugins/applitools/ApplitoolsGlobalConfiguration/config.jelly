@@ -1,8 +1,11 @@
 <?jelly escape-by-default='true'?>
-<j:jelly xmlns:j="jelly:core" xmlns:f="/lib/form">
-  <f:section title="Applitools">
+<j:jelly xmlns:j="jelly:core" xmlns:f="/lib/form" xmlns:c="/lib/credentials">
+  <f:section title="Applitools Eyes">
     <f:entry title="Eyes server URL" field="serverUrl">
       <f:textbox default="${descriptor.DEFAULT_SERVER_URL}" />
+    </f:entry>
+    <f:entry title="Default API key credential" field="credentialsId">
+      <c:select default="${descriptor.DEFAULT_CREDENTIALS_ID}" />
     </f:entry>
   </f:section>
 </j:jelly>

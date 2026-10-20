@@ -1,0 +1,26 @@
+<?jelly escape-by-default='true'?>
+<j:jelly xmlns:j="jelly:core" xmlns:f="/lib/form" xmlns:c="/lib/credentials">
+  <f:entry title="API key credential" field="credentialsId">
+    <c:select />
+  </f:entry>
+  <f:advanced>
+    <f:entry title="Eyes server URL" field="serverUrl">
+      <f:textbox />
+    </f:entry>
+    <f:entry title="Batch name" field="batchName">
+      <f:textbox />
+    </f:entry>
+    <f:entry title="Batch ID" field="batchId">
+      <f:textbox />
+    </f:entry>
+    <f:entry title="Branch name" field="branchName">
+      <f:textbox />
+    </f:entry>
+    <f:entry title="Parent branch name" field="parentBranchName">
+      <f:textbox />
+    </f:entry>
+    <f:entry field="closeBatch">
+      <f:checkbox title="Close the batch when the block finishes" default="true" />
+    </f:entry>
+  </f:advanced>
+</j:jelly>
