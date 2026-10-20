@@ -59,6 +59,10 @@ final class FakeEyesServer implements AutoCloseable {
 
     private void handle(HttpExchange exchange) throws IOException {
         String method = exchange.getRequestMethod();
+        String acceptEncoding = exchange.getRequestHeaders().getFirst("Accept-Encoding");
+        if (acceptEncoding != null && acceptEncoding.contains("gzip")) {
+            gzipRequests.incrementAndGet();
+        }
         String path = exchange.getRequestURI().getPath();
         requests.add(new Request(
                 method,
@@ -128,8 +132,21 @@ final class FakeEyesServer implements AutoCloseable {
         }
     }
 
+    /** Requests that arrived asking for gzip. */
+    final java.util.concurrent.atomic.AtomicInteger gzipRequests = new java.util.concurrent.atomic.AtomicInteger();
+
     private static void respond(HttpExchange exchange, int status, String body) throws IOException {
         byte[] bytes = body != null ? body.getBytes(StandardCharsets.UTF_8) : new byte[0];
+        String accept = exchange.getRequestHeaders().getFirst("Accept-Encoding");
+        if (bytes.length > 0 && accept != null && accept.contains("gzip")) {
+            // Like Eyes: compress JSON when the client asks.
+            java.io.ByteArrayOutputStream out = new java.io.ByteArrayOutputStream();
+            try (java.util.zip.GZIPOutputStream gz = new java.util.zip.GZIPOutputStream(out)) {
+                gz.write(bytes);
+            }
+            bytes = out.toByteArray();
+            exchange.getResponseHeaders().add("Content-Encoding", "gzip");
+        }
         exchange.sendResponseHeaders(status, bytes.length == 0 ? -1 : bytes.length);
         if (bytes.length > 0) {
             exchange.getResponseBody().write(bytes);

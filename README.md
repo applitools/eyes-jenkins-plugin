@@ -14,7 +14,7 @@ Every pull request then gets two checks: **Applitools / Visual tests** and **App
 - **Design review on demand:** add the `design-review` label to a PR, and a designer has to approve its visual changes. Optionally, only listed designers count.
 - **Results in Jenkins too:** a summary on the build page, `applitoolsResults()` for your own logic, and yellow (unstable) builds for changes awaiting review.
 
-**→ [Setup guide](docs/SETUP.md)** (about 30 minutes, start to finish)
+**→ [Setup guide](docs/SETUP.md)** (about 30 minutes, start to finish) · **[Resource usage and limits](docs/OPERATIONS.md)**
 
 ## Develop
 

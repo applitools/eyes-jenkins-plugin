@@ -30,6 +30,10 @@ public class PendingReview {
     private final Set<String> changedTestIds;
     private final long registeredAt;
 
+    /** Polling bookkeeping; not saved, so after a restart every review is polled once right away. */
+    private transient long lastPolledAt;
+    private transient int failures;
+
     private boolean labelPresent;
     private String lastVisualState;
     private String lastDesignState;
@@ -139,6 +143,17 @@ public class PendingReview {
         return registeredAt;
     }
 
+    /** For tests: pretend the review started earlier. */
+    void setRegisteredAtForTest(long registeredAt) {
+        try {
+            java.lang.reflect.Field f = PendingReview.class.getDeclaredField("registeredAt");
+            f.setAccessible(true);
+            f.setLong(this, registeredAt);
+        } catch (ReflectiveOperationException e) {
+            throw new IllegalStateException(e);
+        }
+    }
+
     public boolean isLabelPresent() {
         return labelPresent;
     }
@@ -163,6 +178,46 @@ public class PendingReview {
 
     public void setLastDesignState(String lastDesignState) {
         this.lastDesignState = lastDesignState;
+    }
+
+    /**
+     * When the watcher should poll Eyes next. Polling slows as a review ages (reviewers rarely act on week-old PRs),
+     * and backs off after errors (Eyes down or slow), so long-forgotten PRs cost almost nothing.
+     *
+     * <ul>
+     *   <li>first hour: every minute
+     *   <li>first day: every 5 minutes
+     *   <li>after that: every 30 minutes
+     *   <li>after N consecutive errors: the above, doubled N times, at most an hour
+     * </ul>
+     */
+    public long nextPollAt(long now) {
+        long unit = minPollMillis();
+        long age = now - registeredAt;
+        long interval = age < 3_600_000L ? unit : age < 86_400_000L ? 5 * unit : 30 * unit;
+        if (failures > 0) {
+            interval = Math.min(Math.max(interval, unit) << Math.min(failures, 10), 60 * unit);
+        }
+        return lastPolledAt + interval;
+    }
+
+    /** The base polling interval (one minute); tests lower it. */
+    static long minPollMillis() {
+        return Long.getLong(PendingReview.class.getName() + ".minPollSeconds", 60) * 1000;
+    }
+
+    public long getLastPolledAt() {
+        return lastPolledAt;
+    }
+
+    public void polled(long when, boolean ok) {
+        lastPolledAt = when;
+        failures = ok ? 0 : failures + 1;
+    }
+
+    /** What, if it changes, is worth saving to disk. */
+    public String stateKey() {
+        return lastVisualState + "|" + lastDesignState + "|" + settled + "|" + labelPresent;
     }
 
     public boolean isPullRequest() {

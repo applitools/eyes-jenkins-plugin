@@ -85,6 +85,14 @@ public class CoreSetupChecks extends SetupCheck {
                 ? "Nothing waiting on reviewers in Eyes."
                 : waiting.size() + " build" + (waiting.size() == 1 ? "" : "s") + " waiting on reviewers in Eyes,"
                         + " rechecked every minute: " + String.join(", ", waiting) + ".";
+        long oldestDays = reviews.stream()
+                .mapToLong(r -> (System.currentTimeMillis() - r.getRegisteredAt()) / 86_400_000L)
+                .max()
+                .orElse(0);
+        if (oldestDays >= 1) {
+            detail += " Oldest: " + oldestDays + " day" + (oldestDays == 1 ? "" : "s")
+                    + " (polled less often as reviews age; dropped after 14 days).";
+        }
         if (openPrs > 0) {
             detail += " " + openPrs + " open pull request" + (openPrs == 1 ? " is" : "s are")
                     + " fully reviewed and kept until merged, in case their labels change.";

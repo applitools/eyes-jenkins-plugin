@@ -35,6 +35,11 @@ import org.jvnet.hudson.test.junit.jupiter.WithJenkins;
 @WithJenkins
 public class ReviewFlowTest {
 
+    static {
+        // Poll on every watcher tick, so tests needn't wait out the real one-minute interval.
+        System.setProperty(PendingReview.class.getName() + ".minPollSeconds", "0");
+    }
+
     @TestExtension
     public static final CapturingChecksPublisher.Factory PUBLISHER = new CapturingChecksPublisher.Factory();
 
@@ -233,5 +238,27 @@ public class ReviewFlowTest {
         j.assertBuildStatus(Result.UNSTABLE, job.scheduleBuild2(0));
 
         assertThat(review().getBuildNumber(), is(2));
+    }
+
+    @Test
+    void oneSlowPassDoesNotStarveOthers() throws Exception {
+        System.setProperty(ReviewWatcher.class.getName() + ".budgetSeconds", "0");
+        try {
+            eyes.results("b1", List.of(new FakeTest("s1", "unresolved")));
+            run("applitools(batchId: 'b1') { echo 'tests' }", Result.UNSTABLE);
+            run("applitools(batchId: 'b1') { echo 'tests' }", Result.UNSTABLE); // a second job
+            assertThat(ReviewRegistry.get().all(), hasSize(2));
+            eyes.requests.clear();
+
+            watcherTick(); // budget exhausted after the first review
+            long afterFirst = eyes.requests.stream().filter(r -> r.path().startsWith("/api/v1/")).count();
+            watcherTick(); // the other one goes next
+            long afterSecond = eyes.requests.stream().filter(r -> r.path().startsWith("/api/v1/")).count();
+
+            assertThat(afterFirst, is(1L));
+            assertThat(afterSecond, is(2L));
+        } finally {
+            System.clearProperty(ReviewWatcher.class.getName() + ".budgetSeconds");
+        }
     }
 }

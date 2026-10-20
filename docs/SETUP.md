@@ -281,6 +281,10 @@ What's different:
 
 **Manage Jenkins → System → Applitools Eyes → Report to GitHub as** is **AUTO** by default: checks for GitHub App jobs, statuses for token jobs. Set it to **CHECKS** or **STATUSES** to force one.
 
+## How much it costs your Jenkins
+
+Very little, and it's bounded: no thread per review, at most 500 followed builds (~1 MB of memory), polling that slows from every minute to every 30 minutes as reviews age, and gzipped traffic of about 400 KB per PR reviewed within a day. A hung build costs nothing. See [Resource usage and limits](OPERATIONS.md) for the calculations and tuning options.
+
 ## Local Jenkins: webhook relay
 
 If GitHub can't reach your Jenkins, relay webhooks through [smee.io](https://smee.io). Nothing gets exposed: the relay holds an outbound connection.

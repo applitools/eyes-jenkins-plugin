@@ -25,6 +25,11 @@ public class ReviewRegistry implements Saveable {
     static final long MAX_AGE_MILLIS =
             Long.getLong(ReviewRegistry.class.getName() + ".maxAgeDays", 14) * 24 * 60 * 60 * 1000;
 
+    /** Most builds followed at once; past this, the longest-followed are dropped. */
+    static int maxReviews() {
+        return Integer.getInteger(ReviewRegistry.class.getName() + ".maxReviews", 500);
+    }
+
     private final List<PendingReview> reviews = new ArrayList<>();
     private transient boolean loaded;
 
@@ -61,6 +66,16 @@ public class ReviewRegistry implements Saveable {
         reviews.removeIf(r -> r.getJobFullName().equals(review.getJobFullName()));
         if (!review.isDone()) {
             reviews.add(review);
+        }
+        int excess = reviews.size() - maxReviews();
+        if (excess > 0) {
+            List<PendingReview> oldest = reviews.stream()
+                    .sorted(java.util.Comparator.comparingLong(PendingReview::getRegisteredAt))
+                    .limit(excess)
+                    .toList();
+            reviews.removeAll(oldest);
+            LOGGER.warning("Following more than " + maxReviews() + " Applitools reviews; dropped the " + excess
+                    + " oldest");
         }
         saveQuietly();
     }

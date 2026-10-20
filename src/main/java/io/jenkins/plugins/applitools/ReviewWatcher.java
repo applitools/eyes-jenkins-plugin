@@ -9,6 +9,9 @@ import hudson.security.ACL;
 import hudson.security.ACLContext;
 import io.jenkins.plugins.applitools.review.PendingReview;
 import io.jenkins.plugins.applitools.review.ReviewRegistry;
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.List;
 import java.util.concurrent.TimeUnit;
 import jenkins.model.Jenkins;
 
@@ -30,33 +33,53 @@ public class ReviewWatcher extends AsyncPeriodicWork {
         return TimeUnit.SECONDS.toMillis(PERIOD_SECONDS);
     }
 
+    /** Most time one pass may spend; the rest waits for the next pass (least recently polled first). */
+    static long budgetMillis() {
+        return Long.getLong(ReviewWatcher.class.getName() + ".budgetSeconds", 50) * 1000;
+    }
+
     @Override
     protected void execute(TaskListener listener) {
         try (ACLContext ignored = ACL.as2(ACL.SYSTEM2)) {
             ReviewRegistry registry = ReviewRegistry.get();
-            for (PendingReview review : registry.all()) {
+            long start = System.currentTimeMillis();
+            boolean changed = false;
+            List<PendingReview> reviews = new ArrayList<>(registry.all());
+            reviews.sort(Comparator.comparingLong(PendingReview::getLastPolledAt));
+            for (PendingReview review : reviews) {
                 if (review.isDone()) {
                     registry.remove(review);
                     continue;
                 }
-                if (review.isSettled()) {
-                    continue; // an open PR: kept for label changes and its merge, but nothing to poll
+                long now = System.currentTimeMillis();
+                if (review.isSettled() || now < review.nextPollAt(now)) {
+                    continue; // settled open PR (kept for labels and its merge), or not due yet
+                }
+                if (now - start > budgetMillis()) {
+                    break; // out of time this pass; the least recently polled go first next time
                 }
                 Run<?, ?> run = findRun(review);
                 if (run == null) {
                     registry.remove(review);
                     continue;
                 }
+                String before = review.stateKey();
                 try {
                     ReviewEvaluator.refresh(review, run, listener);
-                    if (review.isDone()) {
-                        registry.remove(review);
-                    }
+                    review.polled(now, true);
                 } catch (Exception e) {
+                    review.polled(now, false);
                     listener.getLogger().println("Could not refresh " + run.getFullDisplayName() + ": " + e);
                 }
+                if (review.isDone()) {
+                    registry.remove(review);
+                } else if (!before.equals(review.stateKey())) {
+                    changed = true;
+                }
             }
-            registry.saveQuietly();
+            if (changed) {
+                registry.saveQuietly();
+            }
         }
     }
 

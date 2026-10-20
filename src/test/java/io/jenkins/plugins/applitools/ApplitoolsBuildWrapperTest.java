@@ -217,6 +217,15 @@ class ApplitoolsBuildWrapperTest {
     }
 
     @Test
+    void resultsAreFetchedGzipped() throws Exception {
+        eyes.results("b1", 3, 0, 0, 1, 0);
+        WorkflowRun run = runPipeline("applitools(batchId: 'b1') { echo 'tests' }", Result.SUCCESS);
+
+        j.assertLogContains("Passed: 3 passed", run); // parsed from a compressed response
+        assertThat(eyes.gzipRequests.get() > 0, is(true));
+    }
+
+    @Test
     void passedResultsAreRecordedAndShownOnBuildPage() throws Exception {
         eyes.results("b1", 3, 0, 0, 1, 0);
         WorkflowRun run = runPipeline(

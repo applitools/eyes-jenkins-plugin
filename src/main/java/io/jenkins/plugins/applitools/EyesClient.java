@@ -5,6 +5,7 @@ import hudson.ProxyConfiguration;
 import java.io.IOException;
 import java.net.URI;
 import java.net.URLEncoder;
+import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
@@ -213,8 +214,48 @@ public class EyesClient {
 
     private static HttpResponse<String> sendWithoutHeader(HttpRequest.Builder request)
             throws IOException, InterruptedException {
-        return ProxyConfiguration.newHttpClient()
-                .send(request.timeout(TIMEOUT).build(), HttpResponse.BodyHandlers.ofString());
+        return client().send(request.timeout(TIMEOUT).header("Accept-Encoding", "gzip").build(), GZIP_AWARE);
+    }
+
+    /**
+     * Eyes compresses JSON about 6x when asked (a 10-test batch: 7.6 KB → 1.2 KB), which matters for the review
+     * watcher's polling. Java's HTTP client doesn't decompress on its own, so do it here.
+     */
+    static final HttpResponse.BodyHandler<String> GZIP_AWARE = info -> {
+        boolean gzip = info.headers()
+                .firstValue("Content-Encoding")
+                .map(v -> v.equalsIgnoreCase("gzip"))
+                .orElse(false);
+        if (!gzip) {
+            return HttpResponse.BodySubscribers.ofString(StandardCharsets.UTF_8);
+        }
+        return HttpResponse.BodySubscribers.mapping(HttpResponse.BodySubscribers.ofByteArray(), bytes -> {
+            try (java.util.zip.GZIPInputStream in =
+                    new java.util.zip.GZIPInputStream(new java.io.ByteArrayInputStream(bytes))) {
+                return new String(in.readAllBytes(), StandardCharsets.UTF_8);
+            } catch (IOException e) {
+                throw new java.io.UncheckedIOException(e);
+            }
+        });
+    };
+
+    private static HttpClient sharedClient;
+    private static ProxyConfiguration sharedClientProxy;
+
+    /**
+     * One HTTP client for every Eyes call. Each client owns a selector thread and a connection pool, so creating one
+     * per request (as {@link ProxyConfiguration#newHttpClient()} does) churns threads and sockets under the review
+     * watcher's load. Rebuilt only when Jenkins' proxy settings change; the old one is left to finish in-flight
+     * requests and be collected.
+     */
+    static synchronized HttpClient client() {
+        jenkins.model.Jenkins instance = jenkins.model.Jenkins.getInstanceOrNull();
+        ProxyConfiguration proxy = instance != null ? instance.getProxy() : null;
+        if (sharedClient == null || proxy != sharedClientProxy) {
+            sharedClient = ProxyConfiguration.newHttpClient();
+            sharedClientProxy = proxy;
+        }
+        return sharedClient;
     }
 
     /** Eyes rejected the key for this operation (e.g. a run key reading results). */
