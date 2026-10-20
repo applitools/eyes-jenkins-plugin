@@ -94,6 +94,10 @@ The Design review check is **always posted** once the feature is on, even when i
 
 `applitools` options: `credentialsId`, `serverUrl`, `batchId`, `batchName`, `branchName`, `parentBranchName`, `closeBatch` (✅ now); `onChanges`, `waitForResults` (2); `checks` (3); `designReview`, `designReviewLabel`, `designers` (4); `autoAcceptOn` (5).
 
+## Status (2026-10-20)
+
+**MVP complete and verified end to end** on a real GitHub repo, Jenkins and Eyes: run → results → Visual tests check → design review gate (label, watcher, designer identity) → baseline merge on PR merge. Works for Playwright and Storybook in one batch. Setup is documented in [SETUP.md](SETUP.md). Next: close the gaps with Chromatic ([CHROMATIC-COMPARISON.md](CHROMATIC-COMPARISON.md)), then the parked items below.
+
 ## Phases
 
 | Phase | Scope | Status |
@@ -103,7 +107,7 @@ The Design review check is **always posted** once the feature is on, even when i
 | **2. Results** | Fetch batch results (read key), build page summary and link, `applitoolsResults()`, `onChanges` policy, `waitForResults` | ✅ Verified on a real PR |
 | **3. Visual tests check** | Post the check from results, Details link to Eyes, optional PR comment | ✅ Verified on a real PR (PR comment not built) |
 | **4. Design review gate** | Flag detection, Design review check, background watcher, label webhooks, designer identity, `applitoolsAwaitReview` | ✅ Verified live: label webhook, watcher flipping both checks after accept in Eyes, restart survival. Designers-only path verified against real API data, not yet end to end. `applitoolsAwaitReview` not built |
-| **5. Baseline lifecycle** | Merge branch baselines on PR merge, `autoAcceptOn` | ✅ Merge on PR merge built and tested (live run pending). `autoAcceptOn` deferred: no documented Eyes mechanism found, and merging keeps `main` correct without it |
+| **5. Baseline lifecycle** | Merge branch baselines on PR merge, `autoAcceptOn` | ✅ Verified live: PR #3 merged → "Baselines merged into main" (7 changes) → the next `main` build passed the accepted Storybook changes. `autoAcceptOn` deferred: no documented Eyes mechanism found, and merging keeps `main` correct without it |
 | **6. Setup experience** | Test connection, setup checklist page, JCasC, sample Jenkinsfiles, 5-step guide | |
 | **7. Hardening** | Fork PRs, watcher timeouts and restarts, dedicated/on-prem Eyes, GitHub Enterprise | |
 
