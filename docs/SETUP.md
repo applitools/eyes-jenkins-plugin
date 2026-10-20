@@ -34,7 +34,7 @@ Restart Jenkins.
 
 ## 2. Create a GitHub App
 
-Jenkins talks to GitHub as a GitHub App. Posting checks requires one; a personal token isn't enough.
+Jenkins talks to GitHub as a GitHub App. This is recommended: results then appear as **checks**, with a details page on the PR. **Already using a personal access token for this job?** You can skip this step: see [Using a personal access token](#using-a-personal-access-token-instead-of-a-github-app).
 
 1. Generate a webhook secret and keep it handy:
    ```bash
@@ -248,7 +248,7 @@ Branch names follow Eyes' `owner/repo/branch` convention, so baselines line up w
 | Log: **"Eyes refused to share results (HTTP 403)"** | Run keys can't read results. Add the `applitools-read-api-key` credential. |
 | Log: **"No Secret text credential with ID …"** | The credential ID doesn't match exactly (check spelling). |
 | Build is **red** on visual changes instead of yellow | The SDK is failing the run on diffs. Set `failTestsOnDiff: false` (Playwright) or `--exitcode false` (Storybook). |
-| Checks never appear on the PR | The job must use the GitHub App credential, and the **GitHub Checks** plugin must be installed. |
+| Checks never appear on the PR | With a GitHub App credential, the **GitHub Checks** plugin must be installed. With a token, look for **commit statuses** instead (same names), and make sure the token can write them. |
 | **Build Now** on the multibranch job doesn't build | At the top level it only rescans the repo. Open the PR's job (**Pull Requests → PR-N**) and click Build Now there. |
 | Inbound agent: **"incorrect secret"** | Copy the secret from **Manage Jenkins → Nodes → your agent** into the agent's `JENKINS_SECRET`. |
 | Playwright: **"Request timed out, likely because it was stuck"**, all sessions aborted | Seen with Eyes NLP enabled in a containerized agent. Workaround: `nlpOptions: { enabled: false }` in `eyesConfig`. |
@@ -257,6 +257,17 @@ Branch names follow Eyes' `owner/repo/branch` convention, so baselines line up w
 | **Baseline merge: "Eyes refused the baseline merge"** | Only **merge** keys can merge baselines (run, read and write keys get HTTP 403). Add one as `applitools-merge-api-key`, then retry: **GitHub App → Advanced → Recent Deliveries**, find the PR's `pull_request` (`closed`) delivery, click **Redeliver**. |
 | **Baseline merge: "N baseline conflicts"** | The same checkpoints also changed on the target branch. Resolve them in Eyes under **Compare & merge branches**. |
 | Design review stays waiting after a designer accepted | The changes must be **saved** in Eyes, and the accepting user's email must be in **Designers**. |
+
+## Using a personal access token instead of a GitHub App
+
+If your multibranch job already connects to GitHub with a personal access token, the plugin posts the same three results as **commit statuses** instead of checks. They have the same names (`Applitools / Visual tests`, `Applitools / Design review`, `Applitools / Baseline merge`), link to the same Eyes results, and can be required in branch protection the same way. You don't need the GitHub Checks plugin.
+
+What's different:
+- **Token permissions:** classic token: `repo` (or `repo:status` plus read access for public repos). Fine-grained token: **Commit statuses: read and write**, **Pull requests: read**, **Contents: read**.
+- **Webhook:** without an App, add the webhook to the repo yourself: **repo Settings → Webhooks → Add webhook**, payload URL `https://<your-jenkins>/github-webhook/`, content type `application/json`, the same secret as `github-webhook-secret`. Select **Pull requests** and **Pushes**.
+- **Waiting for review** shows as a yellow *pending* status (there's no "action required" for statuses). It still blocks the merge.
+
+**Manage Jenkins → System → Applitools Eyes → Report to GitHub as** is **AUTO** by default: checks for GitHub App jobs, statuses for token jobs. Set it to **CHECKS** or **STATUSES** to force one.
 
 ## Local Jenkins: webhook relay
 

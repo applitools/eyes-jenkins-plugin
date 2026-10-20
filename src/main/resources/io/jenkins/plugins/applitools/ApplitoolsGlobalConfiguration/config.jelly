@@ -10,6 +10,9 @@
     <f:entry title="Default read API key credential" field="readCredentialsId">
       <c:select />
     </f:entry>
+    <f:entry title="Report to GitHub as" field="githubReporting">
+      <f:enum>${it.name()}</f:enum>
+    </f:entry>
     <f:entry field="designReviewCheck">
       <f:checkbox title="Post the &quot;Applitools / Design review&quot; check on pull requests" default="true" />
     </f:entry>

@@ -6,6 +6,7 @@ import hudson.Extension;
 import hudson.Util;
 import hudson.security.ACL;
 import hudson.util.ListBoxModel;
+import io.jenkins.plugins.applitools.scm.CommitStatusPublisher;
 import java.util.List;
 import jenkins.model.GlobalConfiguration;
 import jenkins.model.Jenkins;
@@ -38,6 +39,7 @@ public class ApplitoolsGlobalConfiguration extends GlobalConfiguration {
     /** Used automatically for baseline merges when a credential with this ID exists. */
     public static final String DEFAULT_MERGE_CREDENTIALS_ID = "applitools-merge-api-key";
 
+    private CommitStatusPublisher.Mode githubReporting;
     private Boolean mergeBaselines;
     private String mergeCredentialsId;
 
@@ -127,6 +129,17 @@ public class ApplitoolsGlobalConfiguration extends GlobalConfiguration {
     @DataBoundSetter
     public void setDesignReviewCheck(boolean designReviewCheck) {
         this.designReviewCheck = designReviewCheck;
+        save();
+    }
+
+    /** Checks (GitHub App jobs) or commit statuses (token jobs); AUTO picks per job. */
+    public CommitStatusPublisher.Mode getGithubReporting() {
+        return githubReporting != null ? githubReporting : CommitStatusPublisher.Mode.AUTO;
+    }
+
+    @DataBoundSetter
+    public void setGithubReporting(CommitStatusPublisher.Mode githubReporting) {
+        this.githubReporting = githubReporting;
         save();
     }
 

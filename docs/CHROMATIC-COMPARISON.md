@@ -53,7 +53,7 @@ Ranked by how much setup each removes.
 
 | # | Change | Removes | Makes us | Effort |
 | --- | --- | --- | --- | --- |
-| 1 | **Commit-status fallback.** When the job has no GitHub App, post the two results as commit statuses using whatever GitHub credential the job already has (statuses work with personal tokens; checks don't). | The GitHub App requirement for teams using tokens | **At parity** in the "Jenkins builds PRs another way" case | Medium (plugin only) |
+| 1 | ✅ **Done (2026-10-20).** **Commit-status fallback.** When the job has no GitHub App, post the two results as commit statuses using whatever GitHub credential the job already has (statuses work with personal tokens; checks don't). | The GitHub App requirement for teams using tokens | **At parity** in the "Jenkins builds PRs another way" case | Medium (plugin only) |
 | 2 | **One key.** Read results with the run key when Eyes allows it, or have Applitools issue a single "CI key" that can run and read. | The second credential | **At parity** on secrets | Small in the plugin; needs an Eyes product decision |
 | 3 | **Setup checklist page in Jenkins** that checks each piece live: keys valid, GitHub App permissions, webhook received, last check posted, with a fix link for each failure. | Most troubleshooting | **Easier than Chromatic**, which has no CI-side diagnostics | Medium (plan Phase 6) |
 | 4 | **Turn off fail-on-diff automatically:** if the SDKs honor an environment variable for it, the plugin sets it inside the block. *Needs checking per SDK.* | The SDK flag | **Easier than Chromatic** (they need `--exit-zero-on-changes`) | Small, if supported |

@@ -9,6 +9,7 @@ import io.jenkins.plugins.checks.api.ChecksDetails;
 import io.jenkins.plugins.checks.api.ChecksOutput;
 import io.jenkins.plugins.checks.api.ChecksPublisherFactory;
 import io.jenkins.plugins.checks.api.ChecksStatus;
+import io.jenkins.plugins.applitools.scm.CommitStatusPublisher;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
 import java.util.Locale;
@@ -129,12 +130,49 @@ final class VisualTestsCheck {
         return LocalDateTime.now(ZoneOffset.UTC);
     }
 
+    /**
+     * Posts a result as a check, or as a commit status when the job can't post checks (e.g. a GitHub job using a token
+     * rather than a GitHub App). Problems are logged, never thrown: reporting must not fail the build.
+     */
     static void publish(Run<?, ?> run, TaskListener listener, ChecksDetails details) {
+        String name = details.getName().orElse(NAME);
         try {
+            CommitStatusPublisher statuses =
+                    CommitStatusPublisher.forRun(run, ApplitoolsGlobalConfiguration.get().getGithubReporting());
+            if (statuses != null) {
+                Status status = toStatus(details);
+                statuses.publish(run, name, status.state(), status.description(),
+                        details.getDetailsURL().orElse(null));
+                return;
+            }
             ChecksPublisherFactory.fromRun(run, listener).publish(details);
-        } catch (RuntimeException e) {
-            // A check that fails to post must never fail the build.
-            listener.getLogger().println(LOG_PREFIX + "WARNING: could not publish the '" + details.getName().orElse(NAME) + "' check: " + e);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        } catch (Exception e) {
+            listener.getLogger().println(LOG_PREFIX + "WARNING: could not publish '" + name + "': " + e);
         }
+    }
+
+    record Status(CommitStatusPublisher.State state, String description) {}
+
+    /**
+     * Commit statuses have four states and a 140-character description. Anything that should block a merge until a
+     * human acts (in progress, action required) is pending; skipped and neutral pass.
+     */
+    @NonNull
+    static Status toStatus(@NonNull ChecksDetails details) {
+        CommitStatusPublisher.State state;
+        if (details.getStatus() != ChecksStatus.COMPLETED) {
+            state = CommitStatusPublisher.State.PENDING;
+        } else {
+            state = switch (details.getConclusion()) {
+                case SUCCESS, NEUTRAL, SKIPPED -> CommitStatusPublisher.State.SUCCESS;
+                case FAILURE, TIME_OUT, CANCELED -> CommitStatusPublisher.State.FAILURE;
+                case ACTION_REQUIRED, NONE -> CommitStatusPublisher.State.PENDING;
+            };
+        }
+        String title = details.getOutput().flatMap(ChecksOutput::getTitle).orElse("");
+        String description = title.length() > 140 ? title.substring(0, 139) + "…" : title;
+        return new Status(state, description);
     }
 }
