@@ -1,0 +1,10 @@
+<div>
+  Returns the Eyes results recorded by an earlier <code>applitools { }</code> block in this build, as a map:
+  <code>status</code> (<code>PASSED</code>, <code>CHANGES</code>, <code>FAILED</code>, <code>NO_RESULTS</code>), <code>summary</code>,
+  <code>url</code>, <code>batchId</code>, <code>batchName</code>, <code>passed</code>, <code>failed</code>, <code>unresolved</code>,
+  <code>new</code>, <code>aborted</code>, <code>total</code>. Returns <code>null</code> if no results were recorded.
+  <pre>def eyes = applitoolsResults()
+if (eyes?.status == 'CHANGES') {
+  slackSend message: "Visual changes to review: ${eyes.url}"
+}</pre>
+</div>

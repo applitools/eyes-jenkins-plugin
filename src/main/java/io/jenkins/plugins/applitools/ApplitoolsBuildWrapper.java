@@ -13,6 +13,7 @@ import hudson.console.ConsoleLogFilter;
 import hudson.model.AbstractProject;
 import hudson.model.Item;
 import hudson.model.Queue;
+import hudson.model.Result;
 import hudson.model.Run;
 import hudson.model.TaskListener;
 import hudson.model.queue.Tasks;
@@ -71,6 +72,11 @@ public class ApplitoolsBuildWrapper extends SimpleBuildWrapper {
     private String branchName;
     private String parentBranchName;
     private boolean closeBatch = true;
+    private boolean waitForResults = true;
+    private int resultsTimeout = DEFAULT_RESULTS_TIMEOUT;
+    private ChangesPolicy onChanges = ChangesPolicy.UNSTABLE;
+
+    static final int DEFAULT_RESULTS_TIMEOUT = 300;
 
     @DataBoundConstructor
     public ApplitoolsBuildWrapper() {}
@@ -144,6 +150,48 @@ public class ApplitoolsBuildWrapper extends SimpleBuildWrapper {
         this.closeBatch = closeBatch;
     }
 
+    public boolean isWaitForResults() {
+        return waitForResults;
+    }
+
+    /** Wait for Eyes to finish comparing, then record results and apply {@link #getOnChanges()}. */
+    @DataBoundSetter
+    public void setWaitForResults(boolean waitForResults) {
+        this.waitForResults = waitForResults;
+    }
+
+    public int getResultsTimeout() {
+        return resultsTimeout;
+    }
+
+    /** Seconds to wait for tests still rendering after the block finishes. */
+    @DataBoundSetter
+    public void setResultsTimeout(int resultsTimeout) {
+        this.resultsTimeout = resultsTimeout > 0 ? resultsTimeout : DEFAULT_RESULTS_TIMEOUT;
+    }
+
+    @NonNull
+    public ChangesPolicy getOnChanges() {
+        return onChanges;
+    }
+
+    @DataBoundSetter
+    public void setOnChanges(ChangesPolicy onChanges) {
+        this.onChanges = onChanges != null ? onChanges : ChangesPolicy.UNSTABLE;
+    }
+
+    /** Restores defaults for fields added after a job was saved. */
+    @Serial
+    protected Object readResolve() {
+        if (resultsTimeout <= 0) {
+            resultsTimeout = DEFAULT_RESULTS_TIMEOUT;
+        }
+        if (onChanges == null) {
+            onChanges = ChangesPolicy.UNSTABLE;
+        }
+        return this;
+    }
+
     @Override
     public boolean requiresWorkspace() {
         return false;
@@ -196,7 +244,8 @@ public class ApplitoolsBuildWrapper extends SimpleBuildWrapper {
         }
         log.println(LOG_PREFIX + "Server " + server + ", API key from credential '" + credId + "'");
 
-        context.setDisposer(new CloseBatch(server, credId, batch.batchId(), closeBatch));
+        context.setDisposer(new Finish(
+                server, credId, batch.batchId(), closeBatch, waitForResults, resultsTimeout, onChanges));
     }
 
     @Override
@@ -235,43 +284,125 @@ public class ApplitoolsBuildWrapper extends SimpleBuildWrapper {
         }
     }
 
-    /** Closes the batch when the block exits, whether the body passed or failed. Never fails the build. */
-    private static final class CloseBatch extends Disposer {
+    /**
+     * Runs when the block exits, whether the body passed or failed: closes the batch, waits for Eyes to finish, records
+     * the results on the build, and applies the changes policy. Eyes being unreachable only logs a warning; the build
+     * result reflects the tests, not our API calls.
+     */
+    private static final class Finish extends Disposer {
         @Serial
         private static final long serialVersionUID = 1L;
+
+        private static final long POLL_MILLIS = Long.getLong(ApplitoolsBuildWrapper.class.getName() + ".pollMillis", 5000);
 
         private final String serverUrl;
         private final String credentialsId;
         private final String batchId;
-        private final boolean enabled;
+        private final boolean closeBatch;
+        private final boolean waitForResults;
+        private final int resultsTimeout;
+        private final ChangesPolicy onChanges;
 
-        CloseBatch(String serverUrl, String credentialsId, String batchId, boolean enabled) {
+        Finish(
+                String serverUrl,
+                String credentialsId,
+                String batchId,
+                boolean closeBatch,
+                boolean waitForResults,
+                int resultsTimeout,
+                ChangesPolicy onChanges) {
             this.serverUrl = serverUrl;
             this.credentialsId = credentialsId;
             this.batchId = batchId;
-            this.enabled = enabled;
+            this.closeBatch = closeBatch;
+            this.waitForResults = waitForResults;
+            this.resultsTimeout = resultsTimeout;
+            this.onChanges = onChanges;
         }
 
         @Override
-        public void tearDown(Run<?, ?> build, TaskListener listener) throws InterruptedException {
+        public void tearDown(Run<?, ?> build, TaskListener listener) throws IOException, InterruptedException {
             PrintStream log = listener.getLogger();
-            if (!enabled) {
-                log.println(LOG_PREFIX + "closeBatch: false, leaving batch " + batchId + " open");
-                return;
-            }
             String apiKey = lookupApiKey(build, credentialsId);
             if (apiKey == null) {
-                log.println(LOG_PREFIX + "WARNING: credential '" + credentialsId + "' disappeared; batch not closed");
+                log.println(LOG_PREFIX + "WARNING: credential '" + credentialsId
+                        + "' disappeared; batch not closed and results not collected");
                 return;
             }
+            EyesClient eyes = new EyesClient(serverUrl, apiKey);
+
+            if (!closeBatch) {
+                log.println(LOG_PREFIX + "closeBatch: false, leaving batch " + batchId + " open");
+            } else if (!close(eyes, log)) {
+                return; // nothing ran, so there are no results to collect
+            }
+            if (!waitForResults) {
+                return;
+            }
+            BatchResults results = collect(eyes, log);
+            if (results != null) {
+                ApplitoolsResultsAction.addTo(build, results);
+                apply(results, build, log);
+            }
+        }
+
+        /** @return false if Eyes has never heard of the batch */
+        private boolean close(EyesClient eyes, PrintStream log) throws InterruptedException {
             try {
-                switch (new EyesClient(serverUrl, apiKey).closeBatch(batchId)) {
-                    case CLOSED -> log.println(LOG_PREFIX + "Closed batch " + batchId);
-                    case NOT_FOUND -> log.println(
-                            LOG_PREFIX + "No Eyes results for batch " + batchId + " (did any tests run?)");
+                if (eyes.closeBatch(batchId) == EyesClient.CloseResult.NOT_FOUND) {
+                    log.println(LOG_PREFIX + "No Eyes results for batch " + batchId + " (did any tests run?)");
+                    return false;
                 }
+                log.println(LOG_PREFIX + "Closed batch " + batchId);
             } catch (IOException e) {
                 log.println(LOG_PREFIX + "WARNING: could not close batch " + batchId + ": " + e.getMessage());
+            }
+            return true;
+        }
+
+        @CheckForNull
+        private BatchResults collect(EyesClient eyes, PrintStream log) throws InterruptedException {
+            try {
+                long deadline = System.currentTimeMillis() + resultsTimeout * 1000L;
+                int running = eyes.runningCount(batchId);
+                if (running > 0) {
+                    log.println(LOG_PREFIX + "Waiting for " + running + " test(s) to finish in Eyes…");
+                }
+                while (running > 0 && System.currentTimeMillis() < deadline) {
+                    Thread.sleep(POLL_MILLIS);
+                    running = eyes.runningCount(batchId);
+                }
+                if (running > 0) {
+                    log.println(LOG_PREFIX + "WARNING: " + running + " test(s) still running after " + resultsTimeout
+                            + "s; recording partial results");
+                }
+                BatchResults results = eyes.getResults(batchId);
+                if (results == null) {
+                    log.println(LOG_PREFIX + "No Eyes results for batch " + batchId);
+                }
+                return results;
+            } catch (IOException e) {
+                log.println(LOG_PREFIX + "WARNING: could not read results for batch " + batchId + ": "
+                        + e.getMessage());
+                return null;
+            }
+        }
+
+        private void apply(BatchResults results, Run<?, ?> build, PrintStream log) throws AbortException {
+            String line = LOG_PREFIX + results.getOutcome().getLabel() + ": " + results.getSummary()
+                    + (results.getUrl() != null ? " → " + results.getUrl() : "");
+            switch (results.getOutcome()) {
+                case FAILED -> throw new AbortException(line);
+                case CHANGES -> {
+                    if (onChanges == ChangesPolicy.FAILURE) {
+                        throw new AbortException(line);
+                    }
+                    log.println(line);
+                    if (onChanges == ChangesPolicy.UNSTABLE) {
+                        build.setResult(Result.UNSTABLE);
+                    }
+                }
+                case PASSED, NO_RESULTS -> log.println(line);
             }
         }
     }

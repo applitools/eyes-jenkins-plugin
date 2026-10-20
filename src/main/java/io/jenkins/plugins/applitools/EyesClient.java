@@ -9,11 +9,14 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
+import net.sf.json.JSONException;
+import net.sf.json.JSONObject;
 
-/** Minimal Eyes REST client. Uses Jenkins' proxy settings. */
+/** Minimal Eyes REST client. Uses Jenkins' proxy settings and sends the API key in a header. */
 public class EyesClient {
 
     private static final Duration TIMEOUT = Duration.ofSeconds(30);
+    private static final String API_KEY_HEADER = "X-Eyes-Api-Key";
 
     private final String serverUrl;
     private final String apiKey;
@@ -35,21 +38,67 @@ public class EyesClient {
      */
     @NonNull
     public CloseResult closeBatch(@NonNull String batchId) throws IOException, InterruptedException {
-        // TODO(spike): confirm Eyes accepts the key as a header so it stays out of URLs and proxy logs.
-        URI uri = URI.create(serverUrl + "/api/sessions/batches/" + encode(batchId) + "/close/bypointerid?apiKey="
-                + encode(apiKey));
-        HttpRequest request =
-                HttpRequest.newBuilder(uri).timeout(TIMEOUT).DELETE().build();
-        HttpResponse<String> response =
-                ProxyConfiguration.newHttpClient().send(request, HttpResponse.BodyHandlers.ofString());
-        int status = response.statusCode();
-        if (status == 404) {
+        String path = "/api/sessions/batches/" + encode(batchId) + "/close/bypointerid";
+        HttpResponse<String> response = send(HttpRequest.newBuilder(uri(path)).DELETE());
+        if (response.statusCode() == 401) {
+            // Older or on-prem servers may only accept the key as a query parameter on this endpoint.
+            response = sendWithoutHeader(HttpRequest.newBuilder(uri(path + "?apiKey=" + encode(apiKey))).DELETE());
+        }
+        if (response.statusCode() == 404) {
             return CloseResult.NOT_FOUND;
         }
-        if (status / 100 != 2) {
-            throw new IOException("Eyes returned HTTP " + status + " closing batch " + batchId);
-        }
+        requireSuccess(response, "closing batch " + batchId);
         return CloseResult.CLOSED;
+    }
+
+    /** How many tests in the batch are still rendering or comparing; 0 when results are final. */
+    public int runningCount(@NonNull String batchId) throws IOException, InterruptedException {
+        HttpResponse<String> response = send(
+                HttpRequest.newBuilder(uri("/api/sessions/batches/" + encode(batchId) + "/bypointerid")).GET());
+        if (response.statusCode() == 404) {
+            return 0;
+        }
+        requireSuccess(response, "reading batch " + batchId);
+        return json(response).optInt("runningCount");
+    }
+
+    /** Results for a batch by pointer ID; {@code null} if Eyes has no such batch. */
+    public BatchResults getResults(@NonNull String batchId) throws IOException, InterruptedException {
+        HttpResponse<String> response =
+                send(HttpRequest.newBuilder(uri("/api/v1/batches/" + encode(batchId))).GET());
+        if (response.statusCode() == 404) {
+            return null;
+        }
+        requireSuccess(response, "reading results for batch " + batchId);
+        return BatchResults.parse(batchId, json(response));
+    }
+
+    private static JSONObject json(HttpResponse<String> response) throws IOException {
+        try {
+            return JSONObject.fromObject(response.body());
+        } catch (JSONException e) {
+            throw new IOException("Eyes returned an unexpected response: " + e.getMessage(), e);
+        }
+    }
+
+    private URI uri(String pathAndQuery) {
+        return URI.create(serverUrl + pathAndQuery);
+    }
+
+    private HttpResponse<String> send(HttpRequest.Builder request) throws IOException, InterruptedException {
+        return sendWithoutHeader(request.header(API_KEY_HEADER, apiKey));
+    }
+
+    private static HttpResponse<String> sendWithoutHeader(HttpRequest.Builder request)
+            throws IOException, InterruptedException {
+        return ProxyConfiguration.newHttpClient()
+                .send(request.timeout(TIMEOUT).build(), HttpResponse.BodyHandlers.ofString());
+    }
+
+    private static void requireSuccess(HttpResponse<String> response, String what) throws IOException {
+        if (response.statusCode() / 100 != 2) {
+            throw new IOException("Eyes returned HTTP " + response.statusCode() + " " + what);
+        }
     }
 
     private static String encode(String value) {

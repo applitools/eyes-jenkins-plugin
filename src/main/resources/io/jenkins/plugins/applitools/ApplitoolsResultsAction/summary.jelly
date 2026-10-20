@@ -1,0 +1,37 @@
+<?jelly escape-by-default='true'?>
+<j:jelly xmlns:j="jelly:core" xmlns:t="/lib/hudson">
+  <t:summary icon="symbol-eye-outline plugin-ionicons-api">
+    <j:forEach var="batch" items="${it.batches}">
+      <div>
+        <strong>Applitools Eyes: ${batch.outcome.label}</strong>
+        <j:if test="${batch.url != null}">
+          (<a href="${batch.url}" target="_blank" rel="noopener noreferrer">Review in Eyes</a>)
+        </j:if>
+      </div>
+      <div>${batch.name} · ${batch.summary}</div>
+      <j:if test="${!batch.tests.isEmpty()}">
+        <table class="jenkins-table jenkins-table--small jenkins-!-margin-top-1">
+          <thead>
+            <tr><th>Test</th><th>Browser / device</th><th>Status</th></tr>
+          </thead>
+          <tbody>
+            <j:forEach var="test" items="${batch.tests}">
+              <tr>
+                <td>
+                  <j:choose>
+                    <j:when test="${test.url != null}">
+                      <a href="${test.url}" target="_blank" rel="noopener noreferrer">${test.name}</a>
+                    </j:when>
+                    <j:otherwise>${test.name}</j:otherwise>
+                  </j:choose>
+                </td>
+                <td>${test.environment}</td>
+                <td>${test.status}</td>
+              </tr>
+            </j:forEach>
+          </tbody>
+        </table>
+      </j:if>
+    </j:forEach>
+  </t:summary>
+</j:jelly>

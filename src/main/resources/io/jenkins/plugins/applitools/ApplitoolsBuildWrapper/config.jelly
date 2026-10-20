@@ -3,6 +3,9 @@
   <f:entry title="API key credential" field="credentialsId">
     <c:select />
   </f:entry>
+  <f:entry title="When there are visual changes to review" field="onChanges">
+    <f:enum>${it.name()}</f:enum>
+  </f:entry>
   <f:advanced>
     <f:entry title="Eyes server URL" field="serverUrl">
       <f:textbox />
@@ -21,6 +24,12 @@
     </f:entry>
     <f:entry field="closeBatch">
       <f:checkbox title="Close the batch when the block finishes" default="true" />
+    </f:entry>
+    <f:entry field="waitForResults">
+      <f:checkbox title="Wait for Eyes results and record them on the build" default="true" />
+    </f:entry>
+    <f:entry title="Results timeout (seconds)" field="resultsTimeout">
+      <f:number default="300" min="1" />
     </f:entry>
   </f:advanced>
 </j:jelly>

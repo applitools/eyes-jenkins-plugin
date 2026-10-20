@@ -2,10 +2,12 @@ package io.jenkins.plugins.applitools;
 
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.contains;
+import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.empty;
 import static org.hamcrest.Matchers.hasSize;
 import static org.hamcrest.Matchers.is;
 import static org.hamcrest.Matchers.matchesPattern;
+import static org.hamcrest.Matchers.nullValue;
 
 import com.cloudbees.plugins.credentials.CredentialsScope;
 import com.cloudbees.plugins.credentials.SystemCredentialsProvider;
@@ -33,6 +35,11 @@ import org.jvnet.hudson.test.junit.jupiter.WithJenkins;
 class ApplitoolsBuildWrapperTest {
 
     private static final String API_KEY = "fake-eyes-key-0123456789";
+
+    static {
+        // Poll the fake server quickly while "tests are still running".
+        System.setProperty(ApplitoolsBuildWrapper.class.getName() + ".pollMillis", "50");
+    }
 
     private JenkinsRule j;
     private FakeEyesServer eyes;
@@ -86,7 +93,8 @@ class ApplitoolsBuildWrapperTest {
         assertThat(eyes.closeRequests(), hasSize(1));
         FakeEyesServer.Request close = eyes.closeRequests().get(0);
         assertThat(close.path(), is("/api/sessions/batches/" + batchId + "/close/bypointerid"));
-        assertThat(close.query(), is("apiKey=" + API_KEY));
+        assertThat(close.apiKeyHeader(), is(API_KEY));
+        assertThat(close.query(), nullValue()); // key stays out of URLs
     }
 
     @Test
@@ -205,5 +213,103 @@ class ApplitoolsBuildWrapperTest {
                 .map(line -> line.substring(prefix.length()))
                 .findFirst()
                 .orElseThrow(() -> new AssertionError("no log line starting with " + prefix));
+    }
+
+    @Test
+    void passedResultsAreRecordedAndShownOnBuildPage() throws Exception {
+        eyes.results("b1", 3, 0, 0, 1, 0);
+        WorkflowRun run = runPipeline(
+                """
+                applitools(batchId: 'b1') { echo 'tests' }
+                def r = applitoolsResults()
+                echo "status=${r.status} total=${r.total} new=${r.new} url=${r.url}"
+                """,
+                Result.SUCCESS);
+
+        j.assertLogContains("[Applitools] Passed: 3 passed (1 new baselines)", run);
+        j.assertLogContains("status=PASSED total=3 new=1 url=https://eyes.example/app/test-results/123", run);
+        ApplitoolsResultsAction action = run.getAction(ApplitoolsResultsAction.class);
+        assertThat(action.getLatest().getTests().get(0).getEnvironment(), is("Chrome 155.0 on Linux 1280×800"));
+        assertThat(action.getUrlName(), is("https://eyes.example/app/test-results/123"));
+        String page = j.createWebClient().getPage(run).asNormalizedText();
+        assertThat(page, containsString("Applitools Eyes: Passed"));
+        assertThat(page, containsString("Chrome 155.0 on Linux"));
+    }
+
+    @Test
+    void changesMarkBuildUnstableByDefault() throws Exception {
+        eyes.results("b1", 1, 0, 2, 0, 0);
+        WorkflowRun run = runPipeline(
+                """
+                applitools(batchId: 'b1') { echo 'tests' }
+                echo "after block: ${applitoolsResults().status}"
+                """,
+                Result.UNSTABLE);
+
+        j.assertLogContains("Changes to review: 2 of 3 with visual changes to review", run);
+        j.assertLogContains("after block: CHANGES", run); // the pipeline keeps going
+    }
+
+    @Test
+    void changesCanFailTheBuild() throws Exception {
+        eyes.results("b1", 1, 0, 2, 0, 0);
+        WorkflowRun run = runPipeline(
+                """
+                applitools(batchId: 'b1', onChanges: 'FAILURE') { echo 'tests' }
+                echo 'unreachable'
+                """,
+                Result.FAILURE);
+
+        j.assertLogContains("Changes to review", run);
+        j.assertLogNotContains("unreachable", run);
+    }
+
+    @Test
+    void changesCanBeIgnored() throws Exception {
+        eyes.results("b1", 1, 0, 2, 0, 0);
+        runPipeline("applitools(batchId: 'b1', onChanges: 'SUCCESS') { echo 'tests' }", Result.SUCCESS);
+    }
+
+    @Test
+    void abortedTestsFailTheBuild() throws Exception {
+        eyes.results("b1", 0, 4, 0, 4, 4);
+        WorkflowRun run = runPipeline("applitools(batchId: 'b1') { echo 'tests' }", Result.FAILURE);
+
+        j.assertLogContains("Failed: 4 of 4 failed (4 aborted before any checkpoint reached Eyes)", run);
+    }
+
+    @Test
+    void waitsForRunningTests() throws Exception {
+        eyes.results("b1", 2, 0, 0, 0, 0);
+        eyes.runningPolls.put("b1", new java.util.concurrent.atomic.AtomicInteger(3));
+        WorkflowRun run = runPipeline("applitools(batchId: 'b1') { echo 'tests' }", Result.SUCCESS);
+
+        j.assertLogContains("Waiting for 3 test(s) to finish in Eyes", run);
+        j.assertLogContains("Passed: 2 passed", run);
+    }
+
+    @Test
+    void waitForResultsFalseSkipsCollection() throws Exception {
+        eyes.results("b1", 1, 0, 2, 0, 0);
+        WorkflowRun run = runPipeline(
+                """
+                applitools(batchId: 'b1', waitForResults: false) { echo 'tests' }
+                echo "results=${applitoolsResults()}"
+                """,
+                Result.SUCCESS);
+
+        j.assertLogContains("results=null", run);
+        assertThat(eyes.requests.stream().filter(r -> r.method().equals("GET")).toList(), empty());
+    }
+
+    @Test
+    void eyesOutageOnlyWarns() throws Exception {
+        WorkflowRun run;
+        try (FakeEyesServer down = new FakeEyesServer()) {
+            ApplitoolsGlobalConfiguration.get().setServerUrl(down.url());
+        }
+        run = runPipeline("applitools(batchId: 'b1') { echo 'tests' }", Result.SUCCESS);
+
+        j.assertLogContains("WARNING: could not close batch b1", run);
     }
 }
