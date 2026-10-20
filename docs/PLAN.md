@@ -1,128 +1,123 @@
-# Plan: PR-driven visual review (Chromatic-style flow) for Jenkins + Applitools Eyes
+# Plan: Chromatic-style visual review for Jenkins + Applitools Eyes
 
 ## Goal
 
-Match this flow end to end, with Jenkins as the CI:
+Install the plugin, wrap the tests in one step, and get the Chromatic experience on GitHub PRs:
 
-1. Developer opens a PR on GitHub.
-2. Jenkins runs the visual tests against Applitools Eyes automatically.
-3. The PR gets an **Applitools Eyes** status with a link to the diffs.
-4. A designer opens that link, reviews in the Eyes dashboard, and accepts or rejects the changes. They never need to see GitHub.
-5. Unresolved or rejected diffs **block the merge** until the designer approves.
-
-## Key design decision: who owns the GitHub status?
-
-Step 5 is the hard part. The designer approves *after* Jenkins has finished, so whatever posts the PR status has to learn about the approval and update it. Jenkins can't see that without polling or re-running.
-
-**Recommendation: let Eyes own the PR status, and have Jenkins feed it correct data.**
-
-Applitools Eyes already has a GitHub integration (the Applitools GitHub app plus SCM integration in the Eyes admin panel). When a batch's ID is the PR's **head commit SHA** and branch names follow the integration's format, Eyes:
-- posts a commit status on the PR, linking to the batch;
-- updates it to passed or failed as reviewers resolve diffs in the dashboard, with no CI re-run;
-- can merge the branch baseline into the parent baseline when the PR merges.
-
-That covers steps 3–5 for us. **This plugin's job is to make Jenkins produce Eyes batches that the integration recognizes, with no hand-written Jenkinsfile glue.** Today that glue is where setups break.
-
-| Option | Pros | Cons |
-| --- | --- | --- |
-| **A. Eyes posts status (recommended)** | Status updates live when the designer approves; one source of truth; baseline merge for free | Needs the Applitools GitHub app installed and the repo linked in Eyes (an org-admin step) |
-| B. Jenkins posts status (Checks API) | Everything is in Jenkins | Doesn't know when the designer approves, so it needs polling or a re-run, and the merge gate goes stale |
-| C. Both | Jenkins check shows "tests ran or crashed"; Eyes status shows "visually approved" | Two checks on the PR; we have to name them clearly |
-
-Phase 3 can add C as an option: a Jenkins-side check for *execution* failures (tests crashed, no results uploaded), which Eyes can't report.
-
-## Gotchas that break this flow in a hand-rolled Jenkinsfile
-
-These are the reasons setup is hard today, and what the plugin has to handle for users:
-
-- **Wrong SHA on PR builds.** In a Multibranch PR build, GitHub Branch Source checks out the PR *merged with the target branch* by default. That makes `GIT_COMMIT` a synthetic merge commit GitHub has never heard of, so a batch ID based on it puts the Eyes status nowhere. The correct value is the PR head hash (`PullRequestSCMRevision.getPullHash()`).
-- **Missing branch / parent-branch names.** Without them, PR baselines don't branch off the target branch and don't merge back on merge.
-- **Batch never closed, or closed too early.** Each test runner closes its own batch by default, which splits results. If nothing closes the batch, the PR status never finalizes.
-- **API key handled as a raw string** instead of a masked Jenkins credential.
-
-## What the plugin provides
-
-### 1. Run Eyes for a GitHub PR, with zero glue
-
-A Pipeline block step, which also works in Freestyle as a Build Environment wrapper:
+1. A developer opens or updates a PR, and Jenkins runs the Eyes tests automatically.
+2. The PR gets an **Applitools / Visual tests** check with a link to the diffs.
+3. If the PR is flagged for design review, it also gets an **Applitools / Design review** check.
+4. The designer reviews in Eyes and accepts or rejects. They never need GitHub or Jenkins.
+5. Branch protection blocks the merge until both checks pass.
 
 ```groovy
-applitools {
-  sh 'npm run test:visual'
+// The whole developer-facing setup
+pipeline {
+  agent { label 'playwright' }
+  stages {
+    stage('Visual tests') {
+      steps {
+        applitools {
+          sh 'npx playwright test'
+        }
+      }
+    }
+  }
 }
 ```
 
-Inside the block, the plugin derives everything from the build's SCM context and exports it for the Eyes SDKs to pick up:
+## Key design decisions
 
-| Env var | PR build | Branch build (e.g. `main`) |
+**Jenkins owns the GitHub checks, not Eyes.** Eyes' built-in GitHub status only knows "all diffs resolved." It can't express an optional designer gate or who approved. The plugin posts its own checks through Jenkins' Checks API (`checks-api` + `github-checks`), which the sandbox already proves works.
+
+**Batches are keyed to the PR's head commit.** Multibranch PR builds may check out a synthetic merge commit. The plugin reads the real head SHA from the build's SCM revision, so Eyes results, checks and the PR all refer to the same commit.
+
+**The build doesn't wait for the designer.** Review can take days. The build finishes, and a background watcher in the plugin follows the batch and updates the Design review check when the designer acts. No executor is held.
+
+## Approval gates
+
+Two checks, mirroring Chromatic's "UI Tests" and "UI Review":
+
+| Check | State | When |
 | --- | --- | --- |
-| `APPLITOOLS_API_KEY` | from a Jenkins **Secret text credential** (masked in logs) | same |
-| `APPLITOOLS_SERVER_URL` | global config (public cloud / dedicated / on-prem) | same |
-| `APPLITOOLS_BATCH_ID` | PR **head** SHA | commit SHA |
-| `APPLITOOLS_BATCH_NAME` | `<repo> PR #<n>: <title>` | `<repo> <branch>` |
-| `APPLITOOLS_BRANCH_NAME` | `<owner>/<repo>/<source-branch>` | `<owner>/<repo>/<branch>` |
-| `APPLITOOLS_PARENT_BRANCH_NAME` | `<owner>/<repo>/<target-branch>` | unset |
-| `APPLITOOLS_DONT_CLOSE_BATCHES` | `true` (the plugin closes it) | same |
+| **Applitools / Visual tests** | ⏳ in progress | Tests running |
+| | ✅ success | Every visual step passed, or all changes were accepted (by anyone) |
+| | ⚠️ action required | N changes are unresolved; the "Review in Eyes" link goes to the batch |
+| | ❌ failure | Tests crashed, nothing was uploaded, or a change was rejected |
+| **Applitools / Design review** | ➖ skipped | PR isn't flagged for design review (GitHub counts this as passing) |
+| | ⏳ in progress | Flagged; waiting for a designer |
+| | ✅ success | Flagged, and a designer accepted every change (or there were none) |
+| | ❌ failure | A designer rejected a change ("Changes requested") |
 
-Sources: `SCMRevisionAction` / `PullRequestSCMRevision` and `GitHubSCMSource` (an optional dependency on `github-branch-source`), with `CHANGE_*` env vars as a fallback. Any of these can be overridden explicitly.
+The Design review check is **always posted** once the feature is on, even when it's skipped. A required check that never reports would block every PR.
 
-When the block exits, whether it passed or failed:
-- **Close the batch** (`DELETE /api/sessions/batches/{id}/close/bypointerid`). This tells the SCM integration that the batch is complete, so it finalizes the PR status. It's safe with parallel stages: only the outermost/last block closes the batch, tracked per build.
-- **Fetch the batch summary**: passed / unresolved / failed counts and the batch URL.
+**How a PR gets flagged**, highest precedence first:
+1. `applitools(designReview: true | false)` in the Jenkinsfile
+2. `APPLITOOLS_DESIGN_REVIEW=true` in the environment
+3. A PR label, default `design-review` (configurable)
+4. Global default (off)
 
-**Triggering is not ours to build.** Jenkins' GitHub Branch Source (Multibranch Pipeline or Organization Folder) already discovers PRs via webhook and builds them. We document that setup and detect it at runtime.
+**Who counts as a designer:** a list of Eyes users or an Eyes team, set globally or per folder. A developer accepting their own diffs satisfies Visual tests but not Design review. If Eyes can't tell us who accepted a change, v1 treats any acceptance as approval.
 
-### 2. Results back to Jenkins (and to GitHub through Eyes)
+**Label added after the tests ran:** the plugin listens for GitHub's `labeled`/`unlabeled` webhooks and flips the Design review check (skipped ↔ waiting) without re-running the tests.
 
-- **Build page:** an "Applitools Eyes" summary box and sidebar link showing the counts and a **Review in Eyes** button (the designer's link).
-- **Build result policy** (`onUnresolved: 'UNSTABLE' | 'FAILURE' | 'SUCCESS'`, default `UNSTABLE`). The *merge gate* is the Eyes GitHub status, not the Jenkins build result. Failing the Jenkins build on diffs would make the Jenkins check red even after the designer approves, which is the stale-gate problem from option B.
-- **Pipeline return value:** `def r = applitools { ... }` returns counts and the URL, for custom notifications.
-- **Optional (option C):** an `Applitools Eyes / execution` check via `checks-api` / `github-checks`, red only if tests crashed or uploaded nothing.
+## Chromatic parity
 
-### 3. Getting the link to the designer
+| Chromatic | This plugin | Phase |
+| --- | --- | --- |
+| Runs on every push / PR | GitHub Branch Source triggers the build; `applitools {}` sets up Eyes | ✅ 1 |
+| Baselines follow git branches | Branch and parent-branch names derived from the PR | ✅ 1 |
+| UI Tests check | Applitools / Visual tests | 3 |
+| UI Review check with reviewers | Applitools / Design review, label-flagged, designer list | 4 |
+| Review link on the PR | The check's Details link opens the Eyes batch; optional summary comment | 3 |
+| Accepted baselines merge on PR merge | Merge the Eyes branch baseline when the PR merges | 5 |
+| `--auto-accept-changes main` | `autoAcceptOn: 'main'` | 5 |
+| `--exit-zero-on-changes` | `onChanges: 'UNSTABLE' \| 'FAILURE' \| 'SUCCESS'` | 2 |
+| `--exit-once-uploaded` | `waitForResults: false` | 2 |
+| Build history in the web app | Build page summary, per-job trend | 2 |
+| TurboSnap / only changed stories | Out of scope (Eyes runs what the tests run) | — |
 
-- **Primary:** the PR status's "Details" link opens the Eyes batch. Designers need an Eyes account with a Reviewer role.
-- **Not via GitHub:** Eyes' own batch-completion notifications (email/Slack, configured in Eyes admin) plus the batch URL on the Jenkins build page. The plugin asks Eyes to send these notifications when it closes the batch.
-- The plugin won't build its own Slack/email integration; `r.batchUrl` plus existing Jenkins notifier steps cover it.
+**Beyond Chromatic:**
+- Labeling a PR after tests ran updates the gate without a re-run.
+- The designer gate checks *who* approved, not just that someone did.
+- Multiple parallel stages and agents share one batch (`applitools { parallel … }`). ✅
+- Cross-browser and device rendering via the Ultrafast Grid, with no extra setup.
+- Setup checklist and Test connection button in Manage Jenkins.
 
-### 4. "Easily link up the PR": setup experience
+## Steps the plugin provides
 
-- **Manage Jenkins → System → Applitools:** server URL, default credential, **Test connection** button (validates the API key against the server).
-- **Setup checklist page** (Manage Jenkins → Applitools setup), which detects and reports:
-  - credential configured and valid
-  - GitHub Branch Source installed, and which jobs are multibranch on GitHub
-  - a reminder (we can't check this from Jenkins) to install the Applitools GitHub app, link the repo in Eyes admin, and add the branch protection rule
-- **Docs (`docs/github-pr-setup.md`):** a 5-step guide with screenshots:
-  1. Install the Applitools GitHub app on the org/repo, and enable SCM integration in Eyes admin.
-  2. Add the API key as a Jenkins Secret text credential.
-  3. Create a Multibranch Pipeline (GitHub source, PR discovery, webhook).
-  4. Wrap the visual tests in `applitools { }` in the Jenkinsfile (sample provided).
-  5. GitHub branch protection: require the **Applitools Eyes** status check.
-- The Snippet Generator works automatically from `@Symbol` and the config forms.
+| Step | Purpose | Phase |
+| --- | --- | --- |
+| `applitools(…) { … }` | Sets up Eyes env, closes the batch, collects results, posts checks | ✅ 1 (checks in 3) |
+| `applitoolsResults()` | Returns `[status, passed, unresolved, failed, new, url]` for the build's batch, for custom notifications or logic | 2 |
+| `applitoolsAwaitReview(timeout: '2h')` | Waits, without holding an executor, until the review is resolved. For deploy pipelines that must not continue until approval. | 4 |
+
+`applitools` options: `credentialsId`, `serverUrl`, `batchId`, `batchName`, `branchName`, `parentBranchName`, `closeBatch` (✅ now); `onChanges`, `waitForResults` (2); `checks` (3); `designReview`, `designReviewLabel`, `designers` (4); `autoAcceptOn` (5).
 
 ## Phases
 
-| Phase | Scope | Exit criteria |
+| Phase | Scope | Status |
 | --- | --- | --- |
-| **0. Spike** (1–2 days) | Manually wire a sample repo (GitHub + Jenkins multibranch + Eyes SCM integration) using only Jenkinsfile env vars. Answer the open questions below. | A PR shows the Eyes status; designer approval flips it green; merge is blocked until then |
-| **1. Core run** | Credentials, global config, `applitools {}` wrapper, SCM detection (PR head SHA, branch names), batch close | Spike repo works with just `applitools { sh ... }`; JenkinsRule tests with a mocked Eyes server |
-| **2. Results** | Batch summary fetch, build action/summary, result policy, Pipeline return value | Build page shows counts and the review link |
-| **3. GitHub polish** | Setup checklist page, Test connection, docs, optional Checks API execution check | A new user goes from zero to a gated PR by following the docs alone |
-| **4. Hardening and release** | Parallel-stage batching, fork PRs, on-prem/dedicated servers, Jenkins plugin hosting (new plugin ID) | Sample repo passes all spike scenarios; released |
+| **0. Sandbox** | GitHub App, smee relay, signed webhooks, multibranch job, Checks API posting | ✅ Done |
+| **1. Run** | `applitools {}`: credentials, masking, SCM detection (GitHub + env fallback), batch close, nested/parallel | ✅ Committed; real Eyes run pending |
+| **2. Results** | Fetch batch results, build page summary and link, `applitoolsResults()`, `onChanges` policy, `waitForResults` | Next |
+| **3. Visual tests check** | Post the check from results, Details link to Eyes, optional PR comment | |
+| **4. Design review gate** | Flag detection, Design review check, background watcher, label webhooks, designer identity, `applitoolsAwaitReview` | |
+| **5. Baseline lifecycle** | Merge branch baselines on PR merge, `autoAcceptOn` | |
+| **6. Setup experience** | Test connection, setup checklist page, JCasC, sample Jenkinsfiles, 5-step guide | |
+| **7. Hardening** | Fork PRs, watcher timeouts and restarts, dedicated/on-prem Eyes, GitHub Enterprise | |
 
-## Open questions to settle in the spike
+## Open questions about the Eyes API
 
-1. **Status context name** that Eyes posts. Branch protection needs the exact string. Is it a commit status or a check run?
-2. **Exact branch-name format** the SCM integration expects (`owner/repo/branch`?), and whether `PARENT_BRANCH_NAME` must be set for PR baselines to inherit from the target.
-3. **When does the PR status first appear:** on the first test session, or only on batch close? This affects how early the PR shows "pending".
-4. **Batch close vs. integration:** is `close/bypointerid` enough, or does the SCM integration need anything else (e.g. `bindpointers`)?
-5. **Results API:** the supported endpoint for batch summary counts and the batch URL for a given pointer ID.
-6. **Fork PRs:** credentials aren't exposed to untrusted fork builds by default. Do we skip, or run with a restricted key?
-7. **Re-runs:** a second build of the same head SHA reuses the batch ID. Does Eyes append to or replace the batch, and does the status reset?
-8. **GitHub Enterprise Server:** does the Eyes integration support it, and does that affect our detection?
+1. **Batch results:** the endpoint and shape for a batch's summary (counts by status, per-test status, batch URL) by pointer ID.
+2. **Who accepted:** does the API expose which user accepted or rejected each step? This decides designer identity in Phase 4.
+3. **Review events:** are there webhooks for accept/reject, so the watcher can stop polling?
+4. **Branch-name format:** is `owner/repo/branch` what Eyes expects for branch baselines and merging?
+5. **Baseline merge:** the API to merge a branch baseline into its parent (Phase 5).
+6. **Auth header:** can the API key go in a header instead of the `apiKey` query parameter?
+7. **Re-runs:** what happens when a closed batch's pointer ID is reused by a re-run of the same commit?
 
 ## Not in scope (for now)
 
-- Our own GitHub App or webhook receiver (Eyes and GitHub Branch Source already cover these).
-- A review UI inside Jenkins (the designer reviews in Eyes).
-- GitLab / Bitbucket. The SCM detection layer should stay pluggable so these can come later.
+- A review UI inside Jenkins (designers review in Eyes).
+- GitLab / Bitbucket. SCM detection is an extension point, so they can come later.
