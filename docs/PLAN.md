@@ -140,6 +140,10 @@ The Design review check is **always posted** once the feature is on, even when i
 
 Each block defaults its batch ID to the commit SHA. A second block in the same build reuses that ID after the first block closed the batch, so Eyes starts a new batch under the same pointer, and the second block's results and review entry replace the first's. **Workaround (documented in SETUP.md):** put all visual tests in one block. **Fix:** suffix the batch ID per block (e.g. `<sha>-2`), and keep one review entry per block.
 
+### A suite that tests nothing can still pass the gate
+
+`eyes-storybook --exitcode false` (needed so diffs don't fail the build) also exits 0 when it can't launch a browser. In build #9 the Storybook suite silently ran nothing, and the checks reflected only Playwright. **Fix:** an `expectTests:` minimum (or per-app expectations) on the step that fails Visual tests when fewer results arrive, and ideally an SDK setting the plugin can set so diffs don't need `--exitcode false` at all.
+
 ## Not in scope (for now)
 
 - A review UI inside Jenkins (designers review in Eyes).

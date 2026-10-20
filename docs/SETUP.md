@@ -125,7 +125,9 @@ The plugin hands everything to the Eyes SDK through `APPLITOOLS_*` environment v
 
 **Don't set a batch or branch** in `applitools.config.js` or the Eyes config. The plugin sets them from the pull request, and its environment variables win anyway.
 
-**Storybook only:** `eyes-storybook` drives Chrome through Puppeteer. Newer npm versions skip Puppeteer's Chrome download, so install it explicitly (see the Jenkinsfile below).
+**Storybook only:** `eyes-storybook` drives Chrome through Puppeteer. If your agent uses the Playwright image, point Puppeteer at its Chromium with `PUPPETEER_EXECUTABLE_PATH` (see the Jenkinsfile below). That works on ARM agents too; Puppeteer's own Chrome download has no Linux ARM build, and newer npm versions skip it anyway. On other x86 agents, `npx puppeteer browsers install chrome` after `npm ci` also works.
+
+**Check that every suite actually ran.** `--exitcode false` also hides real errors: if `eyes-storybook` can't start a browser, it exits successfully having tested nothing, and the checks only reflect your other suites. After setup, confirm that the build log and the Eyes batch include your stories.
 
 ## 7. Add a Jenkinsfile
 
@@ -140,14 +142,14 @@ pipeline {
     stage('Install') {
       steps {
         sh 'npm ci'
-        sh 'npx puppeteer browsers install chrome'   // only if you use Storybook
       }
     }
     stage('Visual tests') {
       steps {
         applitools {
           sh 'npx playwright test'
-          sh 'npx eyes-storybook --exitcode false'   // only if you use Storybook
+          // Storybook only. Uses the Playwright image's Chromium:
+          sh 'PUPPETEER_EXECUTABLE_PATH=$(ls -d /ms-playwright/chromium-*/chrome-linux*/chrome | head -1) npx eyes-storybook --exitcode false'
         }
       }
     }
@@ -238,6 +240,8 @@ if (eyes?.status == 'CHANGES') {
 | **Build Now** on the multibranch job doesn't build | At the top level it only rescans the repo. Open the PR's job (**Pull Requests → PR-N**) and click Build Now there. |
 | Inbound agent: **"incorrect secret"** | Copy the secret from **Manage Jenkins → Nodes → your agent** into the agent's `JENKINS_SECRET`. |
 | Playwright: **"Request timed out, likely because it was stuck"**, all sessions aborted | Seen with Eyes NLP enabled in a containerized agent. Workaround: `nlpOptions: { enabled: false }` in `eyesConfig`. |
+| Storybook: **"Failed to launch the browser process"** / `qemu-x86_64-static` | Puppeteer downloaded x86 Chrome on an ARM agent. Set `PUPPETEER_EXECUTABLE_PATH` to the Playwright image's Chromium (see step 7). |
+| Storybook stories missing from the Eyes batch | `eyes-storybook` failed before testing; `--exitcode false` hides that. Look for errors right after "Storybook was started" in the build log. |
 | Design review stays waiting after a designer accepted | The changes must be **saved** in Eyes, and the accepting user's email must be in **Designers**. |
 
 ## Local Jenkins: webhook relay

@@ -27,7 +27,8 @@ Both columns assume Jenkins already builds pull requests. Chromatic's Jenkins gu
 | **Reviewers** | In Chromatic's UI: default reviewers, assign per review, or by component owner | Designers list in Manage Jenkins (admin), or `designers:` in the Jenkinsfile | **Chromatic easier** to manage; ours needs a Jenkins admin or a code change |
 | **Requesting review** | UI Review is on or off for the whole project | Per PR with a label, or always, or never | **Us better:** opt-in per PR, applied instantly |
 | **Required checks** | Branch protection: pick the Chromatic checks | Branch protection: pick the two Applitools checks | Parity |
-| **Storybook** | Builds Storybook; captures in Chromatic's cloud | `eyes-storybook` needs Chrome on the agent (`npx puppeteer browsers install chrome`) | **Chromatic easier** (one less agent requirement) |
+| **Storybook** | Builds Storybook; captures in Chromatic's cloud | `eyes-storybook` needs Chrome on the agent. On ARM agents, Puppeteer's download doesn't work and you must point it at another Chromium. | **Chromatic easier** (one less agent requirement) |
+| **Silent failures** | A Storybook build error fails the CI step | `--exitcode false` (needed so diffs don't fail the build) also hides a Storybook launch failure, so the gate can pass with fewer tests | **Chromatic safer** today. Fix: #8 below. |
 | **After merge** | Accepted baselines carry over to the target branch automatically | **Not built yet** (plan Phase 5): the next `main` build may show the same changes again | **Chromatic better.** A functional gap, not just setup. |
 
 ### Effort by starting point
@@ -58,6 +59,7 @@ Ranked by how much setup each removes.
 | 4 | **Turn off fail-on-diff automatically:** if the SDKs honor an environment variable for it, the plugin sets it inside the block. *Needs checking per SDK.* | The SDK flag | **Easier than Chromatic** (they need `--exit-zero-on-changes`) | Small, if supported |
 | 5 | **Designers from a GitHub team** (e.g. `@org/design`) or an Eyes team, instead of a Jenkins list. | Admin-managed reviewer lists | **At parity** with Chromatic's default reviewers | Medium |
 | 6 | **Baseline merge after PR merge** (plan Phase 5). | Re-reviewing the same changes on `main` | **At parity** functionally | Medium; depends on the Eyes merge API |
+| 8 | **Catch suites that ran nothing:** an optional `expectTests:` minimum (or per-app counts) on the step; fewer results fails Visual tests. Pairs with #4, which would remove the need for `--exitcode false`. | Silent false passes | **Safer than Chromatic** | Small |
 | 7 | **Publish to the Jenkins update center** and provide a JCasC snippet for the whole global config. | Manual `.hpi` upload, form clicking | At parity / easier for config-as-code shops | Small |
 
 **Recommended order:** 6 (correctness first), then 1 and 2 (remove the two biggest setup gaps), then 3 and 4 (pull ahead of Chromatic).
