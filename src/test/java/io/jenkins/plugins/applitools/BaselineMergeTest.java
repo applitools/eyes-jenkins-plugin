@@ -113,6 +113,20 @@ public class BaselineMergeTest {
     }
 
     @Test
+    void refusedMergeCanBeRetriedOnceAKeyIsAdded() throws Exception {
+        eyes.requiredMergeKey = "merge-key-0123456789";
+        LabelEventSubscriberTestAccess.mergedAndWait("acme/web", "7", true, "feature", "main");
+        assertThat(mergeCheck().getConclusion(), is(ChecksConclusion.FAILURE));
+        assertThat(ReviewRegistry.get().all().size(), is(1)); // still tracked for a retry
+
+        addSecret(ApplitoolsGlobalConfiguration.DEFAULT_MERGE_CREDENTIALS_ID, "merge-key-0123456789");
+        LabelEventSubscriberTestAccess.mergedAndWait("acme/web", "7", true, "feature", "main"); // redelivered
+
+        assertThat(mergeCheck().getConclusion(), is(ChecksConclusion.SUCCESS));
+        assertThat(ReviewRegistry.get().all(), empty());
+    }
+
+    @Test
     void conflictsFailTheMergeCheck() throws Exception {
         eyes.mergeResult = "{\"merged\":false,\"conflicts\":2,\"changes\":[]}";
 

@@ -97,17 +97,21 @@ public class LabelEventSubscriber extends GHEventsSubscriber {
         List<Future<?>> work = new ArrayList<>();
         ReviewRegistry registry = ReviewRegistry.get();
         for (PendingReview review : registry.forPullRequest(repoSlug, number)) {
-            registry.remove(review);
             if (!merged || headRef == null || baseRef == null
                     || !io.jenkins.plugins.applitools.ApplitoolsGlobalConfiguration.get().isMergeBaselines()) {
+                registry.remove(review);
                 continue;
             }
+            // Keep following it (without polling) until the merge succeeds, so a redelivered webhook can retry.
+            review.setSettled(true);
+            registry.saveQuietly();
             work.add(Timer.get().submit(() -> {
                 try (ACLContext ignored = ACL.as2(ACL.SYSTEM2)) {
                     Run<?, ?> run = findRun(review);
-                    if (run != null) {
-                        io.jenkins.plugins.applitools.BaselineMerge.merge(
-                                review, run, headRef, baseRef, TaskListener.NULL);
+                    if (run == null
+                            || io.jenkins.plugins.applitools.BaselineMerge.merge(
+                                    review, run, headRef, baseRef, TaskListener.NULL)) {
+                        registry.remove(review);
                     }
                 } catch (InterruptedException e) {
                     Thread.currentThread().interrupt();

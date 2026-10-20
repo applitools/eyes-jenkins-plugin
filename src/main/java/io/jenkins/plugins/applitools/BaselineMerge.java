@@ -29,8 +29,12 @@ public final class BaselineMerge {
 
     private BaselineMerge() {}
 
-    /** Merges {@code owner/repo/headRef} into {@code owner/repo/baseRef} using the PR's last build for credentials. */
-    public static void merge(
+    /**
+     * Merges {@code owner/repo/headRef} into {@code owner/repo/baseRef} using the PR's last build for credentials.
+     *
+     * @return true if Eyes merged (or had nothing to merge); false if it should be retried after a fix
+     */
+    public static boolean merge(
             @NonNull PendingReview review,
             @NonNull Run<?, ?> run,
             @NonNull String headRef,
@@ -39,7 +43,7 @@ public final class BaselineMerge {
             throws InterruptedException {
         String slug = review.getRepoSlug();
         if (slug == null) {
-            return;
+            return true; // not a PR we can map to Eyes branches; nothing to retry
         }
         String source = slug + "/" + headRef;
         String target = slug + "/" + baseRef;
@@ -47,7 +51,7 @@ public final class BaselineMerge {
         if (key == null) {
             report(run, listener, ChecksConclusion.FAILURE, "Baseline merge skipped",
                     "No Eyes API key credential was available to merge `" + source + "` into `" + target + "`.");
-            return;
+            return false;
         }
         EyesClient eyes = new EyesClient(review.getServerUrl(), key);
         try {
@@ -58,7 +62,7 @@ public final class BaselineMerge {
                     report(run, listener, ChecksConclusion.FAILURE, "Baseline merge timed out",
                             "Eyes was still merging `" + source + "` into `" + target + "` after "
                                     + TimeUnit.MILLISECONDS.toSeconds(TIMEOUT_MILLIS) + "s. Check the branch in Eyes.");
-                    return;
+                    return false;
                 }
                 Thread.sleep(POLL_MILLIS);
             }
@@ -68,6 +72,7 @@ public final class BaselineMerge {
                         result.conflicts() + " baseline conflict" + (result.conflicts() == 1 ? "" : "s"),
                         "The same checkpoints changed on `" + baseRef + "` too. Resolve them in Eyes under **Compare &"
                                 + " merge branches** (`" + source + "` → `" + target + "`).");
+                return false;
             } else if (result.merged()) {
                 report(run, listener, ChecksConclusion.SUCCESS, "Baselines merged into " + baseRef,
                         result.changes() + " baseline change" + (result.changes() == 1 ? "" : "s")
@@ -76,13 +81,17 @@ public final class BaselineMerge {
                 report(run, listener, ChecksConclusion.SUCCESS, "Nothing to merge",
                         "`" + source + "` had no baseline changes for `" + target + "`.");
             }
+            return true;
         } catch (EyesClient.UnauthorizedException e) {
             report(run, listener, ChecksConclusion.FAILURE, "Eyes refused the baseline merge",
                     "HTTP " + e.getStatus() + ": this key can't merge baselines. Add a Secret text credential with a"
                             + " key that can, as `" + ApplitoolsGlobalConfiguration.DEFAULT_MERGE_CREDENTIALS_ID
-                            + "`, or set one in Manage Jenkins → System → Applitools Eyes.");
+                            + "`, or set one in Manage Jenkins → System → Applitools Eyes. Then redeliver the PR's"
+                            + " `closed` webhook (GitHub App → Advanced → Recent Deliveries) to retry.");
+            return false;
         } catch (IOException e) {
             report(run, listener, ChecksConclusion.FAILURE, "Baseline merge failed", e.getMessage());
+            return false;
         }
     }
 

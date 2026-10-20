@@ -17,7 +17,7 @@ Setup takes about 30 minutes. Do the steps in order.
 
 - [ ] **Jenkins 2.568 or newer** that GitHub can send webhooks to. If yours is on a laptop or behind a firewall, see [Local Jenkins: webhook relay](#local-jenkins-webhook-relay).
 - [ ] **Admin access to the GitHub repo** (to install a GitHub App and set branch protection).
-- [ ] **Applitools API keys:** a normal **run** key (uploads tests) and a **read** key (lets Jenkins read results). Create the read key in Eyes under **Admin → API Keys**. If your run key isn't allowed to merge baselines, you'll also need a key that is (see step 3).
+- [ ] **Applitools API keys:** a normal **run** key (uploads tests) and a **read** key (lets Jenkins read results). Create the read key in Eyes under **Admin → API Keys**. For merging baselines when a PR merges, you also need a **team API key** that's allowed to merge (run keys aren't).
 - [ ] **A Jenkins agent that can run your tests:** Node.js plus the browsers your tests need (for example, the official Playwright image).
 
 ## 1. Install the Jenkins plugins
@@ -74,7 +74,7 @@ Jenkins talks to GitHub as a GitHub App. Posting checks requires one; a personal
 | Secret text | `github-webhook-secret` | The webhook secret |
 | Secret text | `applitools-api-key` | Your Eyes **run** key |
 | Secret text | `applitools-read-api-key` | Your Eyes **read** key |
-| Secret text *(only if needed)* | `applitools-merge-api-key` | An Eyes key allowed to merge baselines, if your run key isn't. Skip this; add it only if the **Baseline merge** check says the key was refused. |
+| Secret text | `applitools-merge-api-key` | An Eyes key allowed to merge baselines (a team API key). Run keys get refused. |
 
 The plugin finds these IDs automatically, so your Jenkinsfile doesn't need to mention them.
 
@@ -252,7 +252,7 @@ Branch names follow Eyes' `owner/repo/branch` convention, so baselines line up w
 | Playwright: **"Request timed out, likely because it was stuck"**, all sessions aborted | Seen with Eyes NLP enabled in a containerized agent. Workaround: `nlpOptions: { enabled: false }` in `eyesConfig`. |
 | Storybook: **"Failed to launch the browser process"** / `qemu-x86_64-static` | Puppeteer downloaded x86 Chrome on an ARM agent. Set `PUPPETEER_EXECUTABLE_PATH` to the Playwright image's Chromium (see step 7). |
 | Storybook stories missing from the Eyes batch | `eyes-storybook` failed before testing; `--exitcode false` hides that. Look for errors right after "Storybook was started" in the build log. |
-| **Baseline merge: "Eyes refused the baseline merge"** | Your run key can't merge baselines. Add a key that can as `applitools-merge-api-key`. |
+| **Baseline merge: "Eyes refused the baseline merge"** | Run keys can't merge baselines. Add a key that can as `applitools-merge-api-key`, then retry: **GitHub App → Advanced → Recent Deliveries**, find the PR's `pull_request` (`closed`) delivery, click **Redeliver**. |
 | **Baseline merge: "N baseline conflicts"** | The same checkpoints also changed on the target branch. Resolve them in Eyes under **Compare & merge branches**. |
 | Design review stays waiting after a designer accepted | The changes must be **saved** in Eyes, and the accepting user's email must be in **Designers**. |
 
