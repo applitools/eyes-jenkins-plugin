@@ -109,6 +109,8 @@ Save.
 
 Save. Jenkins scans the repo; that's expected even before you add a Jenkinsfile.
 
+**Recommended:** in GitHub, turn on **Settings → General → Automatically delete head branches**. Otherwise, once a PR merges, Jenkins builds its leftover branch as a regular branch, creating an extra Eyes batch for nobody to review.
+
 ## 6. Prepare your tests
 
 The plugin hands everything to the Eyes SDK through `APPLITOOLS_*` environment variables (API key, batch, branch), so your test code doesn't need any of it. Two settings matter:
