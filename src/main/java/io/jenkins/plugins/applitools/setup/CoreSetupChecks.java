@@ -31,7 +31,7 @@ public class CoreSetupChecks extends SetupCheck {
         String runId = config.getCredentialsId();
         String runKey = secret(runId);
         if (runKey == null) {
-            items.add(SetupItem.problem("Eyes run key", "No Secret text credential with ID `" + runId + "`.",
+            items.add(SetupItem.problem("Eyes run key", "No Secret text credential with ID \"" + runId + "\".",
                     "Add your Eyes run key under Manage Jenkins → Credentials with that ID."));
             return items;
         }
@@ -45,16 +45,16 @@ public class CoreSetupChecks extends SetupCheck {
         }
         items.add(SetupItem.ok("Eyes server", server + " is reachable."));
         items.add(run == EyesClient.KeyCheck.INVALID
-                ? SetupItem.problem("Eyes run key", "Eyes doesn't recognize the key in `" + runId + "`.",
+                ? SetupItem.problem("Eyes run key", "Eyes doesn't recognize the key in \"" + runId + "\".",
                         "Copy a run key from Eyes → Admin → API Keys into that credential.")
-                : SetupItem.ok("Eyes run key", "`" + runId + "` is valid."));
+                : SetupItem.ok("Eyes run key", "\"" + runId + "\" is valid."));
 
         String readId = config.getReadCredentialsId() != null
                 ? config.getReadCredentialsId()
                 : ApplitoolsGlobalConfiguration.DEFAULT_READ_CREDENTIALS_ID;
         items.add(keyRow("Eyes read key", readId, server, false,
                 "Without one, Jenkins can't read results: no build summary, and the PR checks fail with HTTP 403.",
-                "Create a read key in Eyes → Admin → API Keys and add it as Secret text `" + readId + "`."));
+                "Create a read key in Eyes → Admin → API Keys and add it as Secret text \"" + readId + "\"."));
 
         if (config.isMergeBaselines()) {
             String mergeId = config.getMergeCredentialsId() != null
@@ -64,7 +64,7 @@ public class CoreSetupChecks extends SetupCheck {
                     "Without one, baselines aren't merged when a PR merges, and accepted changes show up again on"
                             + " the target branch.",
                     "Create a key with the merge option (tied to a team and a user) in Eyes → Admin → API Keys,"
-                            + " and add it as Secret text `" + mergeId + "`."));
+                            + " and add it as Secret text \"" + mergeId + "\"."));
         } else {
             items.add(SetupItem.info("Baseline merge", "Turned off in Manage Jenkins → System → Applitools Eyes."));
         }
@@ -75,9 +75,14 @@ public class CoreSetupChecks extends SetupCheck {
                 : "Only " + String.join(", ", designers) + " can approve design reviews."));
 
         List<PendingReview> reviews = ReviewRegistry.get().all();
-        long open = reviews.stream().filter(r -> !r.isSettled()).count();
+        List<String> waiting = reviews.stream()
+                .filter(r -> !r.isSettled())
+                .map(r -> r.getJobFullName() + " #" + r.getBuildNumber())
+                .sorted()
+                .toList();
         items.add(SetupItem.info("Reviews", "Following " + reviews.size() + " build" + (reviews.size() == 1 ? "" : "s")
-                + "; " + open + " waiting on reviewers in Eyes (rechecked every minute)."));
+                + "; " + waiting.size() + " waiting on reviewers in Eyes (rechecked every minute)"
+                + (waiting.isEmpty() ? "." : ": " + String.join(", ", waiting) + ".")));
         return items;
     }
 
@@ -99,19 +104,19 @@ public class CoreSetupChecks extends SetupCheck {
             throws InterruptedException {
         String key = secret(id);
         if (key == null) {
-            return SetupItem.warning(title, "No Secret text credential with ID `" + id + "`. " + whyNeeded, howToAdd);
+            return SetupItem.warning(title, "No Secret text credential with ID \"" + id + "\". " + whyNeeded, howToAdd);
         }
         try {
             EyesClient eyes = new EyesClient(server, key);
             return switch (merge ? eyes.checkMerge() : eyes.checkRead()) {
-                case ALLOWED -> SetupItem.ok(title, "`" + id + "` is valid and allowed to "
+                case ALLOWED -> SetupItem.ok(title, "\"" + id + "\" is valid and allowed to "
                         + (merge ? "merge baselines." : "read results."));
-                case NOT_ALLOWED -> SetupItem.problem(title, "Eyes accepts the key in `" + id + "` but won't let it "
+                case NOT_ALLOWED -> SetupItem.problem(title, "Eyes accepts the key in \"" + id + "\" but won't let it "
                         + (merge ? "merge baselines" : "read results") + ".", howToAdd);
-                case INVALID -> SetupItem.problem(title, "Eyes doesn't recognize the key in `" + id + "`.", howToAdd);
+                case INVALID -> SetupItem.problem(title, "Eyes doesn't recognize the key in \"" + id + "\".", howToAdd);
             };
         } catch (IOException e) {
-            return SetupItem.warning(title, "Couldn't check `" + id + "`: " + e.getMessage(), null);
+            return SetupItem.warning(title, "Couldn't check \"" + id + "\": " + e.getMessage(), null);
         }
     }
 
