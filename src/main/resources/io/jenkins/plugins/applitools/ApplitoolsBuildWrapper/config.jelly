@@ -9,6 +9,9 @@
   <f:entry title="When there are visual changes to review" field="onChanges">
     <f:enum>${it.name()}</f:enum>
   </f:entry>
+  <f:entry field="checks">
+    <f:checkbox title="Post the &quot;Applitools / Visual tests&quot; check on the commit" default="true" />
+  </f:entry>
   <f:advanced>
     <f:entry title="Eyes server URL" field="serverUrl">
       <f:textbox />

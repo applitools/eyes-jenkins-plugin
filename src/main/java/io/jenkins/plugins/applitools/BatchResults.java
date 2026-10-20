@@ -110,6 +110,12 @@ public class BatchResults implements Serializable {
         this.tests = new ArrayList<>(tests);
     }
 
+    /** A batch Eyes never heard of: no tests reported to it. */
+    @NonNull
+    static BatchResults empty(@NonNull String batchId) {
+        return new BatchResults(batchId, null, null, 0, 0, 0, 0, 0, 0, List.of());
+    }
+
     @NonNull
     static BatchResults parse(@NonNull String batchId, @NonNull JSONObject json) {
         JSONObject stats = json.optJSONObject("statistics");

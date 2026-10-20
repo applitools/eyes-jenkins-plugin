@@ -76,6 +76,8 @@ public class ApplitoolsBuildWrapper extends SimpleBuildWrapper {
     private boolean waitForResults = true;
     private int resultsTimeout = DEFAULT_RESULTS_TIMEOUT;
     private ChangesPolicy onChanges = ChangesPolicy.UNSTABLE;
+    /** {@code null} (jobs saved before this option existed) means true. */
+    private Boolean checks;
 
     static final int DEFAULT_RESULTS_TIMEOUT = 300;
 
@@ -192,6 +194,16 @@ public class ApplitoolsBuildWrapper extends SimpleBuildWrapper {
         this.onChanges = onChanges != null ? onChanges : ChangesPolicy.UNSTABLE;
     }
 
+    public boolean isChecks() {
+        return checks == null || checks;
+    }
+
+    /** Post the "Applitools / Visual tests" check on the commit. */
+    @DataBoundSetter
+    public void setChecks(boolean checks) {
+        this.checks = checks;
+    }
+
     /** Restores defaults for fields added after a job was saved. */
     @Serial
     protected Object readResolve() {
@@ -255,6 +267,9 @@ public class ApplitoolsBuildWrapper extends SimpleBuildWrapper {
                     + (batch.parentBranchName() != null ? " ← baseline from " + batch.parentBranchName() : ""));
         }
         log.println(LOG_PREFIX + "Server " + server + ", API key from credential '" + credId + "'");
+        if (isChecks()) {
+            VisualTestsCheck.started(build, listener, batch.batchName());
+        }
 
         String explicitReadId = readCredentialsId != null
                 ? readCredentialsId
@@ -268,7 +283,8 @@ public class ApplitoolsBuildWrapper extends SimpleBuildWrapper {
                 closeBatch,
                 waitForResults,
                 resultsTimeout,
-                onChanges));
+                onChanges,
+                isChecks()));
     }
 
     @Override
@@ -328,6 +344,10 @@ public class ApplitoolsBuildWrapper extends SimpleBuildWrapper {
         private final boolean waitForResults;
         private final int resultsTimeout;
         private final ChangesPolicy onChanges;
+        private final boolean checks;
+
+        /** Results, or why there are none (for the check's summary). */
+        private record Collected(@CheckForNull BatchResults results, @CheckForNull String problem) {}
 
         Finish(
                 String serverUrl,
@@ -338,7 +358,8 @@ public class ApplitoolsBuildWrapper extends SimpleBuildWrapper {
                 boolean closeBatch,
                 boolean waitForResults,
                 int resultsTimeout,
-                ChangesPolicy onChanges) {
+                ChangesPolicy onChanges,
+                boolean checks) {
             this.serverUrl = serverUrl;
             this.credentialsId = credentialsId;
             this.readCredentialsId = readCredentialsId;
@@ -348,6 +369,7 @@ public class ApplitoolsBuildWrapper extends SimpleBuildWrapper {
             this.waitForResults = waitForResults;
             this.resultsTimeout = resultsTimeout;
             this.onChanges = onChanges;
+            this.checks = checks;
         }
 
         @Override
@@ -357,6 +379,10 @@ public class ApplitoolsBuildWrapper extends SimpleBuildWrapper {
             if (apiKey == null) {
                 log.println(LOG_PREFIX + "WARNING: credential '" + credentialsId
                         + "' disappeared; batch not closed and results not collected");
+                if (checks) {
+                    VisualTestsCheck.unavailable(build, listener, "The Eyes API key credential '" + credentialsId
+                            + "' disappeared during the build.", true);
+                }
                 return;
             }
             EyesClient eyes = new EyesClient(serverUrl, apiKey);
@@ -364,15 +390,31 @@ public class ApplitoolsBuildWrapper extends SimpleBuildWrapper {
             if (!closeBatch) {
                 log.println(LOG_PREFIX + "closeBatch: false, leaving batch " + batchId + " open");
             } else if (!close(eyes, log)) {
-                return; // nothing ran, so there are no results to collect
-            }
-            if (!waitForResults) {
+                // Nothing ran, so there are no results to collect; the gate must not pass on an empty run.
+                if (checks) {
+                    VisualTestsCheck.completed(build, listener, BatchResults.empty(batchId));
+                }
                 return;
             }
-            BatchResults results = collect(reader(build, eyes, log), log);
+            if (!waitForResults) {
+                if (checks) {
+                    VisualTestsCheck.unavailable(
+                            build, listener, "`waitForResults: false`, so this build didn't wait for Eyes.", false);
+                }
+                return;
+            }
+            Collected collected = collect(reader(build, eyes, log), log);
+            BatchResults results = collected.results();
             if (results != null) {
                 ApplitoolsResultsAction.addTo(build, results);
+                if (checks) {
+                    VisualTestsCheck.completed(build, listener, results);
+                }
                 apply(results, build, log);
+            } else if (checks) {
+                String problem = collected.problem();
+                VisualTestsCheck.unavailable(
+                        build, listener, problem != null ? problem : "Eyes returned no results.", true);
             }
         }
 
@@ -403,8 +445,7 @@ public class ApplitoolsBuildWrapper extends SimpleBuildWrapper {
             return true;
         }
 
-        @CheckForNull
-        private BatchResults collect(EyesClient eyes, PrintStream log) throws InterruptedException {
+        private Collected collect(EyesClient eyes, PrintStream log) throws InterruptedException {
             try {
                 long deadline = System.currentTimeMillis() + resultsTimeout * 1000L;
                 int running = eyes.runningCount(batchId);
@@ -422,18 +463,21 @@ public class ApplitoolsBuildWrapper extends SimpleBuildWrapper {
                 BatchResults results = eyes.getResults(batchId);
                 if (results == null) {
                     log.println(LOG_PREFIX + "No Eyes results for batch " + batchId);
+                    return new Collected(null, "Eyes has no results for batch `" + batchId + "`.");
                 }
-                return results;
+                return new Collected(results, null);
             } catch (EyesClient.UnauthorizedException e) {
                 log.println(LOG_PREFIX + "WARNING: Eyes refused to share results for batch " + batchId + " (HTTP "
                         + e.getStatus() + "). Run keys can't read results: add a Secret text credential with a read"
                         + " key as '" + ApplitoolsGlobalConfiguration.DEFAULT_READ_CREDENTIALS_ID
                         + "', or set readCredentialsId.");
-                return null;
+                return new Collected(null, "Eyes refused to share results (HTTP " + e.getStatus() + "). Run keys"
+                        + " can't read results; add a read key as `"
+                        + ApplitoolsGlobalConfiguration.DEFAULT_READ_CREDENTIALS_ID + "`.");
             } catch (IOException e) {
                 log.println(LOG_PREFIX + "WARNING: could not read results for batch " + batchId + ": "
                         + e.getMessage());
-                return null;
+                return new Collected(null, "Couldn't reach Eyes to read results: " + e.getMessage());
             }
         }
 
