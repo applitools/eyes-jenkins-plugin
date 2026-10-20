@@ -73,6 +73,61 @@ public class EyesClient {
         return BatchResults.parse(batchId, json(response));
     }
 
+    /** Outcome of a baseline branch merge job. */
+    public record MergeResult(boolean merged, int conflicts, int changes) {}
+
+    /**
+     * Starts merging one baseline branch into another (both in {@code owner/repo/branch} form) and returns the job ID.
+     * {@code onlyCheck} reports conflicts without changing anything.
+     */
+    @NonNull
+    public String startBranchMerge(@NonNull String sourceBranch, @NonNull String targetBranch, boolean onlyCheck)
+            throws IOException, InterruptedException {
+        HttpResponse<String> response = send(HttpRequest.newBuilder(uri("/api/baselines/branches/merge?SourceBranch="
+                        + encode(sourceBranch) + "&TargetBranch=" + encode(targetBranch) + "&OnlyCheck=" + onlyCheck))
+                .POST(HttpRequest.BodyPublishers.noBody()));
+        if (response.statusCode() == 404) {
+            throw new IOException("Eyes has no baseline branch '" + sourceBranch + "' or '" + targetBranch + "'");
+        }
+        if (response.statusCode() != 202) {
+            requireSuccess(response, "starting a merge of " + sourceBranch + " into " + targetBranch);
+        }
+        String location = response.headers().firstValue("Location").orElse("");
+        java.util.regex.Matcher m = java.util.regex.Pattern.compile("/tasks/([^/?]+)").matcher(location);
+        if (!m.find()) {
+            throw new IOException("Eyes accepted the merge but returned no task ID (Location: " + location + ")");
+        }
+        return m.group(1);
+    }
+
+    /** True once the merge job has finished (HTTP 201), false while it's running (HTTP 200). */
+    public boolean isTaskDone(@NonNull String jobId) throws IOException, InterruptedException {
+        HttpResponse<String> response =
+                send(HttpRequest.newBuilder(uri("/api/tasks/" + encode(jobId) + "/status")).GET());
+        if (response.statusCode() == 201) {
+            return true;
+        }
+        if (response.statusCode() == 200) {
+            return false;
+        }
+        requireSuccess(response, "checking merge job " + jobId);
+        return false;
+    }
+
+    @NonNull
+    public MergeResult taskResult(@NonNull String jobId) throws IOException, InterruptedException {
+        HttpResponse<String> response =
+                send(HttpRequest.newBuilder(uri("/api/tasks/" + encode(jobId) + "/result")).GET());
+        if (response.statusCode() == 404) {
+            throw new IOException("Eyes couldn't find one of the branches to merge");
+        }
+        requireSuccess(response, "reading merge job " + jobId);
+        JSONObject result = json(response);
+        net.sf.json.JSONArray changes = result.optJSONArray("changes");
+        return new MergeResult(
+                result.optBoolean("merged"), result.optInt("conflicts"), changes != null ? changes.size() : 0);
+    }
+
     /**
      * Who accepted this session's changes: users whose accept came from this very session. Reviews are recorded in
      * {@code appOutputResolution[].lastAccept} once a session is resolved; {@code expectedAppOutput} is the baseline as

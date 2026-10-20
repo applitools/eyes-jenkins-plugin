@@ -14,6 +14,26 @@ public final class LabelEventSubscriberTestAccess {
         }
     }
 
+    /** Delivers a "closed" PR event and waits for any baseline merge to finish. */
+    public static void mergedAndWait(String repoSlug, String number, boolean merged, String head, String base)
+            throws Exception {
+        for (var future : LabelEventSubscriber.merged(repoSlug, number, merged, head, base)) {
+            future.get(30, TimeUnit.SECONDS);
+        }
+    }
+
+    /** Runs the raw-payload path and waits for the merge it schedules; false if it wasn't a closed-PR event. */
+    public static boolean handleMergedPayloadAndWait(String payload) throws Exception {
+        var work = LabelEventSubscriber.handleMerged(payload);
+        if (work == null) {
+            return false;
+        }
+        for (var future : work) {
+            future.get(30, TimeUnit.SECONDS);
+        }
+        return true;
+    }
+
     /** A copy of a review as if its build were the given pull request (plain test pipelines aren't PRs). */
     public static PendingReview asPullRequest(PendingReview r, String repoSlug, String number) {
         return new PendingReview(

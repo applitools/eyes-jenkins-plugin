@@ -22,5 +22,11 @@
     <f:entry field="designReviewByDefault">
       <f:checkbox title="Require design review on every pull request, not just labeled ones" />
     </f:entry>
+    <f:entry field="mergeBaselines">
+      <f:checkbox title="Merge a pull request's Eyes baselines into its target branch when it merges" default="true" />
+    </f:entry>
+    <f:entry title="Baseline merge API key credential" field="mergeCredentialsId">
+      <c:select />
+    </f:entry>
   </f:section>
 </j:jelly>

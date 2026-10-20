@@ -36,6 +36,15 @@ final class FakeEyesServer implements AutoCloseable {
     final Map<String, AtomicInteger> runningPolls = new ConcurrentHashMap<>();
     /** Session ID → users who accepted that session's changes (as {@code lastAccept} from that session). */
     final Map<String, List<String>> approvals = new ConcurrentHashMap<>();
+    /** Baseline merges requested, as "source -> target (onlyCheck)". */
+    final List<String> merges = new CopyOnWriteArrayList<>();
+    /** Polls of a merge task that answer "still running" before it completes. */
+    volatile int mergeRunningPolls = 1;
+    /** What the finished merge task reports. */
+    volatile String mergeResult = "{\"merged\":true,\"conflicts\":0,\"changes\":[{},{}]}";
+    /** When set, merge requests with any other key get 403. */
+    volatile String requiredMergeKey;
+    private final java.util.concurrent.atomic.AtomicInteger mergePolls = new java.util.concurrent.atomic.AtomicInteger();
     /** When set, GETs with any other key get 403, like Eyes does for run keys. */
     volatile String requiredReadKey;
     private final HttpServer server;
@@ -59,6 +68,30 @@ final class FakeEyesServer implements AutoCloseable {
         Matcher byPointer = BY_POINTER.matcher(path);
         Matcher session = SESSION.matcher(path);
         String key = exchange.getRequestHeaders().getFirst("X-Eyes-Api-Key");
+        if (path.equals("/api/baselines/branches/merge") && method.equals("POST")) {
+            if (requiredMergeKey != null && !requiredMergeKey.equals(key)) {
+                respond(exchange, 403, null);
+                return;
+            }
+            Map<String, String> q = new java.util.HashMap<>();
+            for (String pair : exchange.getRequestURI().getRawQuery().split("&")) {
+                String[] kv = pair.split("=", 2);
+                q.put(kv[0], java.net.URLDecoder.decode(kv[1], StandardCharsets.UTF_8));
+            }
+            merges.add(q.get("SourceBranch") + " -> " + q.get("TargetBranch") + " (" + q.get("OnlyCheck") + ")");
+            mergePolls.set(mergeRunningPolls);
+            exchange.getResponseHeaders().add("Location", url() + "/api/tasks/job-1/status");
+            respond(exchange, 202, null);
+            return;
+        }
+        if (path.equals("/api/tasks/job-1/status")) {
+            respond(exchange, mergePolls.getAndDecrement() > 0 ? 200 : 201, null);
+            return;
+        }
+        if (path.equals("/api/tasks/job-1/result")) {
+            respond(exchange, 200, mergeResult);
+            return;
+        }
         if (method.equals("GET") && requiredReadKey != null && !requiredReadKey.equals(key)) {
             respond(exchange, 403, null);
         } else if (method.equals("DELETE")) {

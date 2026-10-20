@@ -43,6 +43,9 @@ public class LabelEventSubscriber extends GHEventsSubscriber {
 
     @Override
     protected void onEvent(GHSubscriberEvent event) {
+        if (handleMerged(event.getPayload()) != null) {
+            return;
+        }
         GHEventPayload.PullRequest payload;
         try {
             payload = GitHub.offline()
@@ -60,6 +63,60 @@ public class LabelEventSubscriber extends GHEventsSubscriber {
                 String.valueOf(payload.getNumber()),
                 payload.getLabel().getName(),
                 "labeled".equals(action));
+    }
+
+    /**
+     * A merged PR: merge its Eyes baseline branch into the target's, then stop following its review. Read from the raw
+     * JSON because the GitHub library may try to fetch {@code merged} from the API, which offline parsing can't do.
+     *
+     * @return the scheduled work if the event was a closed PR (merged or not), else {@code null}
+     */
+    static List<Future<?>> handleMerged(String rawPayload) {
+        net.sf.json.JSONObject json;
+        try {
+            json = net.sf.json.JSONObject.fromObject(rawPayload);
+        } catch (RuntimeException e) {
+            return null;
+        }
+        if (!"closed".equals(json.optString("action"))) {
+            return null;
+        }
+        net.sf.json.JSONObject pr = json.optJSONObject("pull_request");
+        net.sf.json.JSONObject repo = json.optJSONObject("repository");
+        if (pr == null || repo == null) {
+            return List.of();
+        }
+        String head = pr.optJSONObject("head") != null ? pr.getJSONObject("head").optString("ref", null) : null;
+        String base = pr.optJSONObject("base") != null ? pr.getJSONObject("base").optString("ref", null) : null;
+        return merged(
+                repo.optString("full_name"), String.valueOf(json.optInt("number")), pr.optBoolean("merged"), head, base);
+    }
+
+    /** Merges baselines for a merged PR (if enabled) and drops its review from the registry either way. */
+    static List<Future<?>> merged(String repoSlug, String number, boolean merged, String headRef, String baseRef) {
+        List<Future<?>> work = new ArrayList<>();
+        ReviewRegistry registry = ReviewRegistry.get();
+        for (PendingReview review : registry.forPullRequest(repoSlug, number)) {
+            registry.remove(review);
+            if (!merged || headRef == null || baseRef == null
+                    || !io.jenkins.plugins.applitools.ApplitoolsGlobalConfiguration.get().isMergeBaselines()) {
+                continue;
+            }
+            work.add(Timer.get().submit(() -> {
+                try (ACLContext ignored = ACL.as2(ACL.SYSTEM2)) {
+                    Run<?, ?> run = findRun(review);
+                    if (run != null) {
+                        io.jenkins.plugins.applitools.BaselineMerge.merge(
+                                review, run, headRef, baseRef, TaskListener.NULL);
+                    }
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                } catch (RuntimeException e) {
+                    LOGGER.log(Level.WARNING, "Baseline merge failed for " + repoSlug + "#" + number, e);
+                }
+            }));
+        }
+        return work;
     }
 
     /** Applies a label change to the PR's tracked review and re-posts its Design review check. */

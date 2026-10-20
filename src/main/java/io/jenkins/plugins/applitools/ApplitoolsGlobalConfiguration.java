@@ -35,6 +35,11 @@ public class ApplitoolsGlobalConfiguration extends GlobalConfiguration {
     private Boolean designReviewCheck;
 
     public static final String DEFAULT_DESIGN_REVIEW_LABEL = "design-review";
+    /** Used automatically for baseline merges when a credential with this ID exists. */
+    public static final String DEFAULT_MERGE_CREDENTIALS_ID = "applitools-merge-api-key";
+
+    private Boolean mergeBaselines;
+    private String mergeCredentialsId;
 
     public static ApplitoolsGlobalConfiguration get() {
         return GlobalConfiguration.all().getInstance(ApplitoolsGlobalConfiguration.class);
@@ -123,6 +128,33 @@ public class ApplitoolsGlobalConfiguration extends GlobalConfiguration {
     public void setDesignReviewCheck(boolean designReviewCheck) {
         this.designReviewCheck = designReviewCheck;
         save();
+    }
+
+    /** Merge a PR's Eyes baseline branch into its target branch when the PR merges. */
+    public boolean isMergeBaselines() {
+        return mergeBaselines == null || mergeBaselines;
+    }
+
+    @DataBoundSetter
+    public void setMergeBaselines(boolean mergeBaselines) {
+        this.mergeBaselines = mergeBaselines;
+        save();
+    }
+
+    /** Secret text credential with an Eyes key allowed to merge baselines; falls back to the run key. */
+    public String getMergeCredentialsId() {
+        return mergeCredentialsId;
+    }
+
+    @DataBoundSetter
+    public void setMergeCredentialsId(String mergeCredentialsId) {
+        this.mergeCredentialsId = Util.fixEmptyAndTrim(mergeCredentialsId);
+        save();
+    }
+
+    @POST
+    public ListBoxModel doFillMergeCredentialsIdItems(@QueryParameter String mergeCredentialsId) {
+        return doFillCredentialsIdItems(mergeCredentialsId);
     }
 
     /** Splits a designers setting into a list. */
