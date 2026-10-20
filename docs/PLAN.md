@@ -138,13 +138,15 @@ The Design review check is **always posted** once the feature is on, even when i
 
 **Details for R&D:** `@applitools/eyes-playwright` 1.51.2, `@applitools/core` 4.73.0, `@applitools/req` 1.11.5, `@playwright/test` 1.64.1, Node 22.23. Ultrafast Grid: Chrome, Firefox, Safari, iPhone 15, `fully: true`. Failing batches `00000251609776582785`, `00000251609775668285`, `00000251609775028435`; passing batch `00000251609774741653`.
 
+**SDK follow-up (for R&D):** Playwright reads `failTestsOnDiff` only from config, while Storybook and Cypress accept `APPLITOOLS_*` env vars. An env switch would make Playwright setup zero-config too.
+
 **Plugin follow-up:** if NLP needs particular container setup, document it in the setup guide (Phase 6).
 
 ### Several `applitools` blocks in one build share a batch ID
 
 Each block defaults its batch ID to the commit SHA. A second block in the same build reuses that ID after the first block closed the batch, so Eyes starts a new batch under the same pointer, and the second block's results and review entry replace the first's. **Workaround (documented in SETUP.md):** put all visual tests in one block. **Fix:** suffix the batch ID per block (e.g. `<sha>-2`), and keep one review entry per block.
 
-### A suite that tests nothing can still pass the gate
+### ~~A suite that tests nothing can still pass the gate~~ Fixed 2026-10-20 (`nodiffs` + `expectTests`/`expectApps`)
 
 `eyes-storybook --exitcode false` (needed so diffs don't fail the build) also exits 0 when it can't launch a browser. In build #9 the Storybook suite silently ran nothing, and the checks reflected only Playwright. **Fix:** an `expectTests:` minimum (or per-app expectations) on the step that fails Visual tests when fewer results arrive, and ideally an SDK setting the plugin can set so diffs don't need `--exitcode false` at all.
 

@@ -115,25 +115,23 @@ Save. Jenkins scans the repo; that's expected even before you add a Jenkinsfile.
 
 The plugin hands everything to the Eyes SDK through `APPLITOOLS_*` environment variables (API key, batch, branch), so your test code doesn't need any of it. Two settings matter:
 
-**Let the plugin judge visual changes.** By default, the SDKs fail the test run on any visual difference, which turns the build red before the plugin can mark it "changes to review".
+**Let the plugin judge visual changes.** By default, the Eyes SDKs fail the test command on any visual difference, which turns the build red before the plugin can mark it "changes to review".
 
-- **Playwright** (`playwright.config.ts`):
+- **Storybook and Cypress: nothing to do.** Inside the `applitools` block, the plugin sets `APPLITOOLS_EXITCODE=nodiffs` (Storybook: diffs don't fail the command, errors still do) and `APPLITOOLS_FAIL_CYPRESS_ON_DIFF=false`. Variables you've set yourself are left alone.
+- **Playwright: one line** in `playwright.config.ts`. Its SDK has no environment switch, so make the setting conditional on the plugin's `APPLITOOLS_JENKINS_MANAGED` variable. Developers running tests locally still get failures on diffs:
   ```ts
   eyesConfig: {
-    failTestsOnDiff: false,
+    failTestsOnDiff: process.env.APPLITOOLS_JENKINS_MANAGED ? false : undefined,
     // ...your other settings
   }
   ```
-- **Storybook:** run it with `--exitcode false`:
-  ```bash
-  npx eyes-storybook --exitcode false
-  ```
+- **Other SDKs** (Selenium, WebdriverIO…): pass `false` where your tests collect results (e.g. `runner.getAllTestResults(false)`).
 
 **Don't set a batch or branch** in `applitools.config.js` or the Eyes config. The plugin sets them from the pull request, and its environment variables win anyway.
 
 **Storybook only:** `eyes-storybook` drives Chrome through Puppeteer. If your agent uses the Playwright image, point Puppeteer at its Chromium with `PUPPETEER_EXECUTABLE_PATH` (see the Jenkinsfile below). That works on ARM agents too; Puppeteer's own Chrome download has no Linux ARM build, and newer npm versions skip it anyway. On other x86 agents, `npx puppeteer browsers install chrome` after `npm ci` also works.
 
-**Check that every suite actually ran.** `--exitcode false` also hides real errors: if `eyes-storybook` can't start a browser, it exits successfully having tested nothing, and the checks only reflect your other suites. After setup, confirm that the build log and the Eyes batch include your stories.
+**Make sure every suite actually reports.** List your Eyes app names with `expectApps` (or set a minimum with `expectTests`). If a suite reports nothing, for example because it couldn't start a browser, **Applitools / Visual tests** fails, even after the other suites' changes are accepted.
 
 ### Check your setup so far
 
@@ -162,10 +160,11 @@ pipeline {
     }
     stage('Visual tests') {
       steps {
-        applitools {
+        // expectApps: your Eyes app names; the gate fails if one reports nothing.
+        applitools(expectApps: ['My Web App', 'My Storybook']) {
           sh 'npx playwright test'
           // Storybook only. Uses the Playwright image's Chromium:
-          sh 'PUPPETEER_EXECUTABLE_PATH=$(ls -d /ms-playwright/chromium-*/chrome-linux*/chrome | head -1) npx eyes-storybook --exitcode false'
+          sh 'PUPPETEER_EXECUTABLE_PATH=$(ls -d /ms-playwright/chromium-*/chrome-linux*/chrome | head -1) npx eyes-storybook'
         }
       }
     }
@@ -224,6 +223,9 @@ All are optional.
 | `designReviewLabel` | `design-review` | PR label that requests design review |
 | `designers` | global setting | Comma-separated Eyes emails who may approve |
 | `checks` | `true` | Post the PR checks |
+| `expectTests` | none | Minimum number of Eyes tests; fewer fails Visual tests and the build |
+| `expectApps` | none | Eyes app names that must each report at least one test, e.g. `['Web', 'Storybook']` |
+| `judgeDiffs` | `true` | Tell SDKs that support it (Storybook, Cypress) not to fail on diffs; `false` keeps the SDKs' behavior |
 | `waitForResults` | `true` | Wait for Eyes results before finishing the block |
 | `resultsTimeout` | `300` | Seconds to wait for tests still rendering |
 | `batchName`, `batchId`, `branchName`, `parentBranchName` | from the PR | Overrides (support `${VAR}`) |
@@ -246,7 +248,7 @@ if (eyes?.status == 'CHANGES') {
 
 Branch names follow Eyes' `owner/repo/branch` convention, so baselines line up with the Eyes GitHub integration if you also use it.
 
-`APPLITOOLS_API_KEY` (masked in logs), `APPLITOOLS_SERVER_URL`, `APPLITOOLS_BATCH_ID` (the PR's head commit), `APPLITOOLS_BATCH_NAME`, `APPLITOOLS_BATCH_SEQUENCE`, `APPLITOOLS_BRANCH_NAME`, `APPLITOOLS_PARENT_BRANCH_NAME`, `APPLITOOLS_DONT_CLOSE_BATCHES=true`.
+`APPLITOOLS_JENKINS_MANAGED=true` (lets test configs detect the plugin), `APPLITOOLS_EXITCODE=nodiffs` and `APPLITOOLS_FAIL_CYPRESS_ON_DIFF=false` (unless you set them, or `judgeDiffs: false`), `APPLITOOLS_API_KEY` (masked in logs), `APPLITOOLS_SERVER_URL`, `APPLITOOLS_BATCH_ID` (the PR's head commit), `APPLITOOLS_BATCH_NAME`, `APPLITOOLS_BATCH_SEQUENCE`, `APPLITOOLS_BRANCH_NAME`, `APPLITOOLS_PARENT_BRANCH_NAME`, `APPLITOOLS_DONT_CLOSE_BATCHES=true`.
 
 ## Troubleshooting
 
@@ -259,13 +261,14 @@ Branch names follow Eyes' `owner/repo/branch` convention, so baselines line up w
 | Webhook deliveries show **400** | Signature mismatch: the secret in the GitHub App and in `github-webhook-secret` differ. |
 | Log: **"Eyes refused to share results (HTTP 403)"** | Run keys can't read results. Add the `applitools-read-api-key` credential. |
 | Log: **"No Secret text credential with ID …"** | The credential ID doesn't match exactly (check spelling). |
-| Build is **red** on visual changes instead of yellow | The SDK is failing the run on diffs. Set `failTestsOnDiff: false` (Playwright) or `--exitcode false` (Storybook). |
+| Build is **red** on visual changes instead of yellow | An SDK is failing the command on diffs. Playwright: add the `failTestsOnDiff` line from step 6. Storybook/Cypress: check you haven't set `APPLITOOLS_EXITCODE` / `APPLITOOLS_FAIL_CYPRESS_ON_DIFF` yourself, and that `judgeDiffs` isn't `false`. |
+| **Visual tests: "Missing results: no tests from …"** | A suite reported nothing to Eyes. Look in the build log for that suite's error (e.g. a browser that wouldn't start). |
 | Checks never appear on the PR | With a GitHub App credential, the **GitHub Checks** plugin must be installed. With a token, look for **commit statuses** instead (same names), and make sure the token can write them. |
 | **Build Now** on the multibranch job doesn't build | At the top level it only rescans the repo. Open the PR's job (**Pull Requests → PR-N**) and click Build Now there. |
 | Inbound agent: **"incorrect secret"** | Copy the secret from **Manage Jenkins → Nodes → your agent** into the agent's `JENKINS_SECRET`. |
 | Playwright: **"Request timed out, likely because it was stuck"**, all sessions aborted | Seen with Eyes NLP enabled in a containerized agent. Workaround: `nlpOptions: { enabled: false }` in `eyesConfig`. |
 | Storybook: **"Failed to launch the browser process"** / `qemu-x86_64-static` | Puppeteer downloaded x86 Chrome on an ARM agent. Set `PUPPETEER_EXECUTABLE_PATH` to the Playwright image's Chromium (see step 7). |
-| Storybook stories missing from the Eyes batch | `eyes-storybook` failed before testing; `--exitcode false` hides that. Look for errors right after "Storybook was started" in the build log. |
+| Storybook stories missing from the Eyes batch | `eyes-storybook` failed before testing. Its step now fails the build (the plugin uses `nodiffs`, not `false`); look for errors right after "Storybook was started". Use `expectApps` to catch it in the PR check too. |
 | **Baseline merge: "Eyes refused the baseline merge"** | Only **merge** keys can merge baselines (run, read and write keys get HTTP 403). Add one as `applitools-merge-api-key`, then retry: **GitHub App → Advanced → Recent Deliveries**, find the PR's `pull_request` (`closed`) delivery, click **Redeliver**. |
 | **Baseline merge: "N baseline conflicts"** | The same checkpoints also changed on the target branch. Resolve them in Eyes under **Compare & merge branches**. |
 | Design review stays waiting after a designer accepted | The changes must be **saved** in Eyes, and the accepting user's email must be in **Designers**. |
