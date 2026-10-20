@@ -113,7 +113,7 @@ The Design review check is **always posted** once the feature is on, even when i
 2. ~~**Who accepted:**~~ Answered: `GET /api/sessions/batches/{batchId}/{sessionId}` → `appOutputResolution[].lastAccept {user, sessionId}` once resolved (`expectedAppOutput` is the run-time snapshot and names earlier sessions); `isManuallyRejected` for rejections.
 3. **Review events:** are there webhooks for accept/reject, so the watcher can stop polling?
 4. ~~**Branch-name format:**~~ Answered: `owner/repo/branch` (the format Eyes' SCM integrations and merge API use).
-5. ~~**Baseline merge:**~~ Answered: `POST /api/baselines/branches/merge?SourceBranch=&TargetBranch=&OnlyCheck=` → 202 + `Location: …/tasks/{id}`; poll `GET /api/tasks/{id}/status` (200 running, 201 done); `GET /api/tasks/{id}/result` → `{merged, conflicts, changes[]}`. Run keys get HTTP 403 (verified live 2026-10-20); a team API key is needed.
+5. ~~**Baseline merge:**~~ Answered: `POST /api/baselines/branches/merge?SourceBranch=&TargetBranch=&OnlyCheck=` → 202 + `Location: …/tasks/{id}`; poll `GET /api/tasks/{id}/status` (200 running, 201 done); `GET /api/tasks/{id}/result` → `{merged, conflicts, changes[]}`. Needs an Eyes **merge** key, tied to a team and a user for an audit trail. Run and write keys get HTTP 403 (verified live 2026-10-20). Task IDs arrive URL-encoded in `Location`.
 6. **Auth header:** can the API key go in a header instead of the `apiKey` query parameter?
 7. **Re-runs:** what happens when a closed batch's pointer ID is reused by a re-run of the same commit?
 

@@ -84,8 +84,8 @@ public final class BaselineMerge {
             return true;
         } catch (EyesClient.UnauthorizedException e) {
             report(run, listener, ChecksConclusion.FAILURE, "Eyes refused the baseline merge",
-                    "HTTP " + e.getStatus() + ": this key can't merge baselines. Add a Secret text credential with a"
-                            + " key that can, as `" + ApplitoolsGlobalConfiguration.DEFAULT_MERGE_CREDENTIALS_ID
+                    "HTTP " + e.getStatus() + ": only Eyes **merge** keys (created for a team and a user) can merge"
+                            + " baselines. Add one as a Secret text credential `" + ApplitoolsGlobalConfiguration.DEFAULT_MERGE_CREDENTIALS_ID
                             + "`, or set one in Manage Jenkins → System → Applitools Eyes. Then redeliver the PR's"
                             + " `closed` webhook (GitHub App → Advanced → Recent Deliveries) to retry.");
             return false;

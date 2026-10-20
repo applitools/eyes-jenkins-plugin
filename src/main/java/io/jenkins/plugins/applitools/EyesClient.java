@@ -97,7 +97,8 @@ public class EyesClient {
         if (!m.find()) {
             throw new IOException("Eyes accepted the merge but returned no task ID (Location: " + location + ")");
         }
-        return m.group(1);
+        // Eyes returns the ID already URL-encoded (e.g. "...%7e1r"); decode it so it isn't encoded twice later.
+        return java.net.URLDecoder.decode(m.group(1), StandardCharsets.UTF_8);
     }
 
     /** True once the merge job has finished (HTTP 201), false while it's running (HTTP 200). */

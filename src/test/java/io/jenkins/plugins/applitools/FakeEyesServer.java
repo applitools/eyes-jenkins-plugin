@@ -80,15 +80,16 @@ final class FakeEyesServer implements AutoCloseable {
             }
             merges.add(q.get("SourceBranch") + " -> " + q.get("TargetBranch") + " (" + q.get("OnlyCheck") + ")");
             mergePolls.set(mergeRunningPolls);
-            exchange.getResponseHeaders().add("Location", url() + "/api/tasks/job-1/status");
+            // Like Eyes: the task ID contains "~" and arrives URL-encoded in the Location header.
+            exchange.getResponseHeaders().add("Location", url() + "/api/tasks/00639281275195298877%7e1r/status");
             respond(exchange, 202, null);
             return;
         }
-        if (path.equals("/api/tasks/job-1/status")) {
+        if (path.equals("/api/tasks/00639281275195298877~1r/status")) {
             respond(exchange, mergePolls.getAndDecrement() > 0 ? 200 : 201, null);
             return;
         }
-        if (path.equals("/api/tasks/job-1/result")) {
+        if (path.equals("/api/tasks/00639281275195298877~1r/result")) {
             respond(exchange, 200, mergeResult);
             return;
         }
