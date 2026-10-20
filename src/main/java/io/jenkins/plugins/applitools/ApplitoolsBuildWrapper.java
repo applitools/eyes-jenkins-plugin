@@ -440,18 +440,16 @@ public class ApplitoolsBuildWrapper extends SimpleBuildWrapper {
         private void apply(BatchResults results, Run<?, ?> build, PrintStream log) throws AbortException {
             String line = LOG_PREFIX + results.getOutcome().getLabel() + ": " + results.getSummary()
                     + (results.getUrl() != null ? " → " + results.getUrl() : "");
-            switch (results.getOutcome()) {
-                case FAILED -> throw new AbortException(line);
-                case CHANGES -> {
-                    if (onChanges == ChangesPolicy.FAILURE) {
-                        throw new AbortException(line);
-                    }
-                    log.println(line);
-                    if (onChanges == ChangesPolicy.UNSTABLE) {
-                        build.setResult(Result.UNSTABLE);
-                    }
-                }
-                case PASSED, NO_RESULTS -> log.println(line);
+            // Always log the verdict: if the body already failed, Pipeline only reports the body's error and our
+            // exception would be attached to it silently.
+            log.println(line);
+            boolean fail = results.getOutcome() == BatchResults.Outcome.FAILED
+                    || (results.getOutcome() == BatchResults.Outcome.CHANGES && onChanges == ChangesPolicy.FAILURE);
+            if (fail) {
+                throw new AbortException(LOG_PREFIX + "Failing the build: " + results.getOutcome().getLabel());
+            }
+            if (results.getOutcome() == BatchResults.Outcome.CHANGES && onChanges == ChangesPolicy.UNSTABLE) {
+                build.setResult(Result.UNSTABLE);
             }
         }
     }

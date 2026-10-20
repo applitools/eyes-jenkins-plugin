@@ -381,4 +381,14 @@ class ApplitoolsBuildWrapperTest {
 
         j.assertLogContains("Passed: 2 passed", run);
     }
+
+    @Test
+    void verdictIsLoggedEvenWhenTestsAlreadyFailed() throws Exception {
+        eyes.results("b1", 0, 4, 0, 4, 4);
+        WorkflowRun run = runPipeline(
+                "applitools(batchId: 'b1') { error 'script returned exit code 1' }", Result.FAILURE);
+
+        j.assertLogContains("script returned exit code 1", run);
+        j.assertLogContains("Failed: 4 of 4 failed (4 aborted before any checkpoint reached Eyes)", run);
+    }
 }
