@@ -9,13 +9,15 @@ When you're done, every pull request gets two checks from Jenkins:
 
 Both checks link straight to the results in Eyes. Accepting changes in Eyes turns them green within about a minute, with no re-run. Making them required in branch protection blocks the merge until then.
 
+When the pull request merges, the plugin merges its Eyes baselines into the target branch, so accepted changes aren't flagged again there. The outcome appears as a third check, **Applitools / Baseline merge**.
+
 Setup takes about 30 minutes. Do the steps in order.
 
 ## Before you start
 
 - [ ] **Jenkins 2.568 or newer** that GitHub can send webhooks to. If yours is on a laptop or behind a firewall, see [Local Jenkins: webhook relay](#local-jenkins-webhook-relay).
 - [ ] **Admin access to the GitHub repo** (to install a GitHub App and set branch protection).
-- [ ] **Two Applitools API keys:** a normal **run** key (uploads tests) and a **read** key (lets Jenkins read results). Create the read key in Eyes under **Admin → API Keys**.
+- [ ] **Applitools API keys:** a normal **run** key (uploads tests) and a **read** key (lets Jenkins read results). Create the read key in Eyes under **Admin → API Keys**. If your run key isn't allowed to merge baselines, you'll also need a key that is (see step 3).
 - [ ] **A Jenkins agent that can run your tests:** Node.js plus the browsers your tests need (for example, the official Playwright image).
 
 ## 1. Install the Jenkins plugins
@@ -72,8 +74,9 @@ Jenkins talks to GitHub as a GitHub App. Posting checks requires one; a personal
 | Secret text | `github-webhook-secret` | The webhook secret |
 | Secret text | `applitools-api-key` | Your Eyes **run** key |
 | Secret text | `applitools-read-api-key` | Your Eyes **read** key |
+| Secret text *(only if needed)* | `applitools-merge-api-key` | An Eyes key allowed to merge baselines, if your run key isn't. Skip this; add it only if the **Baseline merge** check says the key was refused. |
 
-The plugin uses `applitools-api-key` and `applitools-read-api-key` automatically, so your Jenkinsfile doesn't need to mention them.
+The plugin finds these IDs automatically, so your Jenkinsfile doesn't need to mention them.
 
 Delete the `.pem` files once the GitHub App credential tests OK.
 
@@ -87,6 +90,7 @@ Delete the `.pem` files once the GitHub App credential tests OK.
   - **Eyes server URL:** leave the default unless you use a dedicated or on-prem Eyes.
   - **Designers:** Eyes login emails of the people who may approve design reviews. Leave empty to let any reviewer approve.
   - **Design review label:** defaults to `design-review`.
+  - **Merge a pull request's Eyes baselines into its target branch when it merges:** on by default.
 
 Save.
 
@@ -178,6 +182,8 @@ Open a pull request first, so GitHub has seen both checks. Then go to **GitHub �
 - `Applitools / Visual tests`
 - `Applitools / Design review`
 
+Don't require `Applitools / Baseline merge`: it only appears after a pull request merges.
+
 ## 9. Try it
 
 1. **Open a pull request.** Within a minute, both checks appear. With no visual changes, Visual tests is ✅ and Design review is ➖ *skipped*.
@@ -187,6 +193,8 @@ Open a pull request first, so GitHub has seen both checks. Then go to **GitHub �
 5. Within a minute, both checks turn ✅. With a designers list, Design review reads *Approved by …*, and only a designer's approval counts.
 
 Rejecting a change in Eyes turns both checks ❌.
+
+6. **Merge the pull request.** Within a minute or two, **Applitools / Baseline merge** appears on it: ✅ *Baselines merged into main*. The next build of `main` compares against the changes you accepted.
 
 ## Reference
 
@@ -224,6 +232,8 @@ if (eyes?.status == 'CHANGES') {
 
 ### Environment variables the plugin sets
 
+Branch names follow Eyes' `owner/repo/branch` convention, so baselines line up with the Eyes GitHub integration if you also use it.
+
 `APPLITOOLS_API_KEY` (masked in logs), `APPLITOOLS_SERVER_URL`, `APPLITOOLS_BATCH_ID` (the PR's head commit), `APPLITOOLS_BATCH_NAME`, `APPLITOOLS_BATCH_SEQUENCE`, `APPLITOOLS_BRANCH_NAME`, `APPLITOOLS_PARENT_BRANCH_NAME`, `APPLITOOLS_DONT_CLOSE_BATCHES=true`.
 
 ## Troubleshooting
@@ -242,6 +252,8 @@ if (eyes?.status == 'CHANGES') {
 | Playwright: **"Request timed out, likely because it was stuck"**, all sessions aborted | Seen with Eyes NLP enabled in a containerized agent. Workaround: `nlpOptions: { enabled: false }` in `eyesConfig`. |
 | Storybook: **"Failed to launch the browser process"** / `qemu-x86_64-static` | Puppeteer downloaded x86 Chrome on an ARM agent. Set `PUPPETEER_EXECUTABLE_PATH` to the Playwright image's Chromium (see step 7). |
 | Storybook stories missing from the Eyes batch | `eyes-storybook` failed before testing; `--exitcode false` hides that. Look for errors right after "Storybook was started" in the build log. |
+| **Baseline merge: "Eyes refused the baseline merge"** | Your run key can't merge baselines. Add a key that can as `applitools-merge-api-key`. |
+| **Baseline merge: "N baseline conflicts"** | The same checkpoints also changed on the target branch. Resolve them in Eyes under **Compare & merge branches**. |
 | Design review stays waiting after a designer accepted | The changes must be **saved** in Eyes, and the accepting user's email must be in **Designers**. |
 
 ## Local Jenkins: webhook relay
