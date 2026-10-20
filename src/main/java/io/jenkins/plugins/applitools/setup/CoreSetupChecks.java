@@ -80,9 +80,16 @@ public class CoreSetupChecks extends SetupCheck {
                 .map(r -> r.getJobFullName() + " #" + r.getBuildNumber())
                 .sorted()
                 .toList();
-        items.add(SetupItem.info("Reviews", "Following " + reviews.size() + " build" + (reviews.size() == 1 ? "" : "s")
-                + "; " + waiting.size() + " waiting on reviewers in Eyes (rechecked every minute)"
-                + (waiting.isEmpty() ? "." : ": " + String.join(", ", waiting) + ".")));
+        long openPrs = reviews.stream().filter(r -> r.isSettled() && r.isPullRequest()).count();
+        String detail = waiting.isEmpty()
+                ? "Nothing waiting on reviewers in Eyes."
+                : waiting.size() + " build" + (waiting.size() == 1 ? "" : "s") + " waiting on reviewers in Eyes,"
+                        + " rechecked every minute: " + String.join(", ", waiting) + ".";
+        if (openPrs > 0) {
+            detail += " " + openPrs + " open pull request" + (openPrs == 1 ? " is" : "s are")
+                    + " fully reviewed and kept until merged, in case their labels change.";
+        }
+        items.add(SetupItem.info("Reviews", detail));
         return items;
     }
 

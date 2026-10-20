@@ -1,6 +1,7 @@
 package io.jenkins.plugins.applitools;
 
 import static org.hamcrest.MatcherAssert.assertThat;
+import static org.hamcrest.Matchers.empty;
 import static org.hamcrest.Matchers.hasSize;
 import static org.hamcrest.Matchers.is;
 
@@ -97,7 +98,7 @@ public class ReviewFlowTest {
 
         ChecksDetails design = latest(DesignReview.CHECK_NAME);
         assertThat(design.getConclusion(), is(ChecksConclusion.SKIPPED));
-        assertThat(review().isSettled(), is(true));
+        assertThat(ReviewRegistry.get().all(), empty()); // a settled branch build isn't followed
     }
 
     @Test
@@ -117,7 +118,7 @@ public class ReviewFlowTest {
 
         assertThat(latest(VisualTestsCheck.NAME).getConclusion(), is(ChecksConclusion.SUCCESS));
         assertThat(latest(DesignReview.CHECK_NAME).getConclusion(), is(ChecksConclusion.SUCCESS));
-        assertThat(review().isSettled(), is(true));
+        assertThat(ReviewRegistry.get().all(), empty()); // done: no longer followed
         assertThat(build.getAction(ApplitoolsResultsAction.class).getLatest().getOutcome(),
                 is(BatchResults.Outcome.PASSED)); // build page updated too
     }
@@ -157,7 +158,7 @@ public class ReviewFlowTest {
 
         assertThat(latest(VisualTestsCheck.NAME).getConclusion(), is(ChecksConclusion.FAILURE));
         assertThat(latest(DesignReview.CHECK_NAME).getConclusion(), is(ChecksConclusion.FAILURE));
-        assertThat(review().isSettled(), is(true));
+        assertThat(ReviewRegistry.get().all(), empty());
     }
 
     @Test
@@ -208,6 +209,19 @@ public class ReviewFlowTest {
         run("applitools(batchId: 'b1') { echo 'tests' }", Result.SUCCESS);
 
         assertThat(count(DesignReview.CHECK_NAME), is(0L));
+    }
+
+    @Test
+    void settledPullRequestIsKeptForLabelChanges() throws Exception {
+        eyes.results("b1", List.of(new FakeTest("s1", "unresolved")));
+        run("applitools(batchId: 'b1') { echo 'tests' }", Result.UNSTABLE);
+        ReviewRegistry.get().register(LabelEventSubscriberTestAccess.asPullRequest(review(), "acme/web", "7"));
+
+        eyes.results("b1", List.of(new FakeTest("s1", "passed")));
+        watcherTick();
+        watcherTick();
+
+        assertThat(review().isSettled(), is(true)); // still tracked: the PR is open
     }
 
     @Test

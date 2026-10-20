@@ -35,8 +35,12 @@ public class ReviewWatcher extends AsyncPeriodicWork {
         try (ACLContext ignored = ACL.as2(ACL.SYSTEM2)) {
             ReviewRegistry registry = ReviewRegistry.get();
             for (PendingReview review : registry.all()) {
-                if (review.isSettled()) {
+                if (review.isDone()) {
+                    registry.remove(review);
                     continue;
+                }
+                if (review.isSettled()) {
+                    continue; // an open PR: kept for label changes and its merge, but nothing to poll
                 }
                 Run<?, ?> run = findRun(review);
                 if (run == null) {
@@ -45,6 +49,9 @@ public class ReviewWatcher extends AsyncPeriodicWork {
                 }
                 try {
                     ReviewEvaluator.refresh(review, run, listener);
+                    if (review.isDone()) {
+                        registry.remove(review);
+                    }
                 } catch (Exception e) {
                     listener.getLogger().println("Could not refresh " + run.getFullDisplayName() + ": " + e);
                 }

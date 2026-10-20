@@ -165,6 +165,18 @@ public class PendingReview {
         this.lastDesignState = lastDesignState;
     }
 
+    public boolean isPullRequest() {
+        return changeId != null;
+    }
+
+    /**
+     * Nothing more can happen: settled, and not a pull request (labels and merges only apply to PRs). An open PR
+     * stays tracked even when settled, until it closes.
+     */
+    public boolean isDone() {
+        return settled && !isPullRequest();
+    }
+
     /** True when nothing can change without a reviewer or label event; the watcher stops polling. */
     public boolean isSettled() {
         return settled;

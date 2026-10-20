@@ -49,10 +49,11 @@ public class BaselineMergeTest {
         eyes = new FakeEyesServer();
         ApplitoolsGlobalConfiguration.get().setServerUrl(eyes.url());
         addSecret(ApplitoolsGlobalConfiguration.DEFAULT_CREDENTIALS_ID, "run-key-0123456789");
-        eyes.results("b1", List.of(new FakeTest("s1", "passed")));
+        // Unreviewed changes, so the (non-PR) test build is followed and can be turned into a PR below.
+        eyes.results("b1", List.of(new FakeTest("s1", "unresolved")));
         WorkflowJob job = j.createProject(WorkflowJob.class);
         job.setDefinition(new CpsFlowDefinition("applitools(batchId: 'b1') { echo 'tests' }", true));
-        j.assertBuildStatus(Result.SUCCESS, job.scheduleBuild2(0));
+        j.assertBuildStatus(Result.UNSTABLE, job.scheduleBuild2(0));
         // Plain test pipelines aren't PRs; pretend this build is PR #7 of acme/web.
         PendingReview review = ReviewRegistry.get().all().get(0);
         ReviewRegistry.get().register(LabelEventSubscriberTestAccess.asPullRequest(review, "acme/web", "7"));

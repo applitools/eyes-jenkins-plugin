@@ -52,11 +52,16 @@ public class ReviewRegistry implements Saveable {
         }
     }
 
-    /** Tracks a build, replacing any older build of the same job. */
+    /**
+     * Tracks a build, replacing any older build of the same job. A build that's already {@linkplain
+     * PendingReview#isDone() done} only replaces the older one.
+     */
     public synchronized void register(@NonNull PendingReview review) {
         ensureLoaded();
         reviews.removeIf(r -> r.getJobFullName().equals(review.getJobFullName()));
-        reviews.add(review);
+        if (!review.isDone()) {
+            reviews.add(review);
+        }
         saveQuietly();
     }
 
