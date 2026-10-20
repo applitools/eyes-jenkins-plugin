@@ -23,9 +23,12 @@ public class ApplitoolsGlobalConfiguration extends GlobalConfiguration {
 
     public static final String DEFAULT_SERVER_URL = "https://eyes.applitools.com";
     public static final String DEFAULT_CREDENTIALS_ID = "applitools-api-key";
+    /** Used automatically when a credential with this ID exists and nothing else is configured. */
+    public static final String DEFAULT_READ_CREDENTIALS_ID = "applitools-read-api-key";
 
     private String serverUrl;
     private String credentialsId;
+    private String readCredentialsId;
 
     public static ApplitoolsGlobalConfiguration get() {
         return GlobalConfiguration.all().getInstance(ApplitoolsGlobalConfiguration.class);
@@ -56,6 +59,25 @@ public class ApplitoolsGlobalConfiguration extends GlobalConfiguration {
     public void setCredentialsId(String credentialsId) {
         this.credentialsId = Util.fixEmptyAndTrim(credentialsId);
         save();
+    }
+
+    /**
+     * ID of a Secret text credential with an Eyes key that can read results. Run keys can upload tests but get HTTP 403
+     * reading results. {@code null} means: use {@link #DEFAULT_READ_CREDENTIALS_ID} if it exists, else the run key.
+     */
+    public String getReadCredentialsId() {
+        return readCredentialsId;
+    }
+
+    @DataBoundSetter
+    public void setReadCredentialsId(String readCredentialsId) {
+        this.readCredentialsId = Util.fixEmptyAndTrim(readCredentialsId);
+        save();
+    }
+
+    @POST
+    public ListBoxModel doFillReadCredentialsIdItems(@QueryParameter String readCredentialsId) {
+        return doFillCredentialsIdItems(readCredentialsId);
     }
 
     @POST

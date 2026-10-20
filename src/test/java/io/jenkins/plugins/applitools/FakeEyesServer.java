@@ -33,6 +33,8 @@ final class FakeEyesServer implements AutoCloseable {
     final List<String> unknownBatches = new CopyOnWriteArrayList<>();
     final Map<String, String> results = new ConcurrentHashMap<>();
     final Map<String, AtomicInteger> runningPolls = new ConcurrentHashMap<>();
+    /** When set, GETs with any other key get 403, like Eyes does for run keys. */
+    volatile String requiredReadKey;
     private final HttpServer server;
 
     FakeEyesServer() throws IOException {
@@ -52,7 +54,10 @@ final class FakeEyesServer implements AutoCloseable {
 
         Matcher v1 = V1_BATCH.matcher(path);
         Matcher byPointer = BY_POINTER.matcher(path);
-        if (method.equals("DELETE")) {
+        String key = exchange.getRequestHeaders().getFirst("X-Eyes-Api-Key");
+        if (method.equals("GET") && requiredReadKey != null && !requiredReadKey.equals(key)) {
+            respond(exchange, 403, null);
+        } else if (method.equals("DELETE")) {
             boolean unknown = unknownBatches.stream().anyMatch(id -> path.contains("/batches/" + id + "/"));
             respond(exchange, unknown ? 404 : 200, null);
         } else if (v1.matches() && results.containsKey(v1.group(1))) {

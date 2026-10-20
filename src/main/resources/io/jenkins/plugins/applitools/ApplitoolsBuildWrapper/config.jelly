@@ -3,6 +3,9 @@
   <f:entry title="API key credential" field="credentialsId">
     <c:select />
   </f:entry>
+  <f:entry title="Read API key credential" field="readCredentialsId">
+    <c:select />
+  </f:entry>
   <f:entry title="When there are visual changes to review" field="onChanges">
     <f:enum>${it.name()}</f:enum>
   </f:entry>

@@ -66,6 +66,7 @@ public class ApplitoolsBuildWrapper extends SimpleBuildWrapper {
     private static final String LOG_PREFIX = "[Applitools] ";
 
     private String credentialsId;
+    private String readCredentialsId;
     private String serverUrl;
     private String batchId;
     private String batchName;
@@ -89,6 +90,17 @@ public class ApplitoolsBuildWrapper extends SimpleBuildWrapper {
     @DataBoundSetter
     public void setCredentialsId(String credentialsId) {
         this.credentialsId = Util.fixEmptyAndTrim(credentialsId);
+    }
+
+    @CheckForNull
+    public String getReadCredentialsId() {
+        return readCredentialsId;
+    }
+
+    /** Secret text credential with a key that can read results; run keys get HTTP 403 reading them. */
+    @DataBoundSetter
+    public void setReadCredentialsId(String readCredentialsId) {
+        this.readCredentialsId = Util.fixEmptyAndTrim(readCredentialsId);
     }
 
     @CheckForNull
@@ -244,8 +256,19 @@ public class ApplitoolsBuildWrapper extends SimpleBuildWrapper {
         }
         log.println(LOG_PREFIX + "Server " + server + ", API key from credential '" + credId + "'");
 
+        String explicitReadId = readCredentialsId != null
+                ? readCredentialsId
+                : ApplitoolsGlobalConfiguration.get().getReadCredentialsId();
         context.setDisposer(new Finish(
-                server, credId, batch.batchId(), closeBatch, waitForResults, resultsTimeout, onChanges));
+                server,
+                credId,
+                explicitReadId != null ? explicitReadId : ApplitoolsGlobalConfiguration.DEFAULT_READ_CREDENTIALS_ID,
+                explicitReadId != null,
+                batch.batchId(),
+                closeBatch,
+                waitForResults,
+                resultsTimeout,
+                onChanges));
     }
 
     @Override
@@ -297,6 +320,9 @@ public class ApplitoolsBuildWrapper extends SimpleBuildWrapper {
 
         private final String serverUrl;
         private final String credentialsId;
+        private final String readCredentialsId;
+        /** True if the user named the read credential, so its absence is worth a warning. */
+        private final boolean readCredentialsExplicit;
         private final String batchId;
         private final boolean closeBatch;
         private final boolean waitForResults;
@@ -306,6 +332,8 @@ public class ApplitoolsBuildWrapper extends SimpleBuildWrapper {
         Finish(
                 String serverUrl,
                 String credentialsId,
+                String readCredentialsId,
+                boolean readCredentialsExplicit,
                 String batchId,
                 boolean closeBatch,
                 boolean waitForResults,
@@ -313,6 +341,8 @@ public class ApplitoolsBuildWrapper extends SimpleBuildWrapper {
                 ChangesPolicy onChanges) {
             this.serverUrl = serverUrl;
             this.credentialsId = credentialsId;
+            this.readCredentialsId = readCredentialsId;
+            this.readCredentialsExplicit = readCredentialsExplicit;
             this.batchId = batchId;
             this.closeBatch = closeBatch;
             this.waitForResults = waitForResults;
@@ -339,11 +369,24 @@ public class ApplitoolsBuildWrapper extends SimpleBuildWrapper {
             if (!waitForResults) {
                 return;
             }
-            BatchResults results = collect(eyes, log);
+            BatchResults results = collect(reader(build, eyes, log), log);
             if (results != null) {
                 ApplitoolsResultsAction.addTo(build, results);
                 apply(results, build, log);
             }
+        }
+
+        /** Client for reading results: the read key if there is one, else the run key. */
+        private EyesClient reader(Run<?, ?> build, EyesClient runKeyClient, PrintStream log) {
+            String readKey = lookupApiKey(build, readCredentialsId);
+            if (readKey != null) {
+                return new EyesClient(serverUrl, readKey);
+            }
+            if (readCredentialsExplicit) {
+                log.println(LOG_PREFIX + "WARNING: no Secret text credential with ID '" + readCredentialsId
+                        + "'; reading results with the run key instead");
+            }
+            return runKeyClient;
         }
 
         /** @return false if Eyes has never heard of the batch */
@@ -381,6 +424,12 @@ public class ApplitoolsBuildWrapper extends SimpleBuildWrapper {
                     log.println(LOG_PREFIX + "No Eyes results for batch " + batchId);
                 }
                 return results;
+            } catch (EyesClient.UnauthorizedException e) {
+                log.println(LOG_PREFIX + "WARNING: Eyes refused to share results for batch " + batchId + " (HTTP "
+                        + e.getStatus() + "). Run keys can't read results: add a Secret text credential with a read"
+                        + " key as '" + ApplitoolsGlobalConfiguration.DEFAULT_READ_CREDENTIALS_ID
+                        + "', or set readCredentialsId.");
+                return null;
             } catch (IOException e) {
                 log.println(LOG_PREFIX + "WARNING: could not read results for batch " + batchId + ": "
                         + e.getMessage());
@@ -440,6 +489,12 @@ public class ApplitoolsBuildWrapper extends SimpleBuildWrapper {
         @Override
         public String getDisplayName() {
             return "Applitools Eyes";
+        }
+
+        @POST
+        public ListBoxModel doFillReadCredentialsIdItems(
+                @AncestorInPath Item item, @QueryParameter String readCredentialsId) {
+            return doFillCredentialsIdItems(item, readCredentialsId);
         }
 
         @POST

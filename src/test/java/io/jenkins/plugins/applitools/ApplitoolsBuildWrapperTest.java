@@ -35,6 +35,7 @@ import org.jvnet.hudson.test.junit.jupiter.WithJenkins;
 class ApplitoolsBuildWrapperTest {
 
     private static final String API_KEY = "fake-eyes-key-0123456789";
+    private static final String READ_KEY = "fake-eyes-read-key-9876543210";
 
     static {
         // Poll the fake server quickly while "tests are still running".
@@ -311,5 +312,73 @@ class ApplitoolsBuildWrapperTest {
         run = runPipeline("applitools(batchId: 'b1') { echo 'tests' }", Result.SUCCESS);
 
         j.assertLogContains("WARNING: could not close batch b1", run);
+    }
+
+    private void addSecret(String id, String value) throws java.io.IOException {
+        SystemCredentialsProvider.getInstance()
+                .getCredentials()
+                .add(new StringCredentialsImpl(CredentialsScope.GLOBAL, id, "", Secret.fromString(value)));
+        SystemCredentialsProvider.getInstance().save();
+    }
+
+    @Test
+    void runKeyOnlyGetsReadKeyHint() throws Exception {
+        eyes.requiredReadKey = READ_KEY;
+        eyes.results("b1", 1, 0, 0, 0, 0);
+        WorkflowRun run = runPipeline("applitools(batchId: 'b1') { echo 'tests' }", Result.SUCCESS);
+
+        j.assertLogContains("[Applitools] Closed batch b1", run); // run key still closes
+        j.assertLogContains("Eyes refused to share results for batch b1 (HTTP 403)", run);
+        j.assertLogContains("'applitools-read-api-key'", run);
+    }
+
+    @Test
+    void conventionalReadKeyIsUsedAutomatically() throws Exception {
+        addSecret(ApplitoolsGlobalConfiguration.DEFAULT_READ_CREDENTIALS_ID, READ_KEY);
+        eyes.requiredReadKey = READ_KEY;
+        eyes.results("b1", 2, 0, 0, 0, 0);
+        WorkflowRun run = runPipeline("applitools(batchId: 'b1') { echo 'tests' }", Result.SUCCESS);
+
+        j.assertLogContains("Passed: 2 passed", run);
+        assertThat(eyes.closeRequests().get(0).apiKeyHeader(), is(API_KEY));
+        assertThat(
+                eyes.requests.stream()
+                        .filter(r -> r.method().equals("GET"))
+                        .map(FakeEyesServer.Request::apiKeyHeader)
+                        .distinct()
+                        .toList(),
+                contains(READ_KEY));
+    }
+
+    @Test
+    void explicitReadKey() throws Exception {
+        addSecret("team-read-key", READ_KEY);
+        eyes.requiredReadKey = READ_KEY;
+        eyes.results("b1", 2, 0, 0, 0, 0);
+        WorkflowRun run = runPipeline(
+                "applitools(batchId: 'b1', readCredentialsId: 'team-read-key') { echo 'tests' }", Result.SUCCESS);
+
+        j.assertLogContains("Passed: 2 passed", run);
+    }
+
+    @Test
+    void missingExplicitReadKeyFallsBackToRunKey() throws Exception {
+        eyes.results("b1", 2, 0, 0, 0, 0);
+        WorkflowRun run = runPipeline(
+                "applitools(batchId: 'b1', readCredentialsId: 'not-added-yet') { echo 'tests' }", Result.SUCCESS);
+
+        j.assertLogContains("no Secret text credential with ID 'not-added-yet'; reading results with the run key", run);
+        j.assertLogContains("Passed: 2 passed", run);
+    }
+
+    @Test
+    void readKeyFromGlobalConfig() throws Exception {
+        addSecret("global-read", READ_KEY);
+        ApplitoolsGlobalConfiguration.get().setReadCredentialsId("global-read");
+        eyes.requiredReadKey = READ_KEY;
+        eyes.results("b1", 2, 0, 0, 0, 0);
+        WorkflowRun run = runPipeline("applitools(batchId: 'b1') { echo 'tests' }", Result.SUCCESS);
+
+        j.assertLogContains("Passed: 2 passed", run);
     }
 }

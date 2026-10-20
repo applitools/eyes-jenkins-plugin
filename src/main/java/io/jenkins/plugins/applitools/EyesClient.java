@@ -95,7 +95,28 @@ public class EyesClient {
                 .send(request.timeout(TIMEOUT).build(), HttpResponse.BodyHandlers.ofString());
     }
 
+    /** Eyes rejected the key for this operation (e.g. a run key reading results). */
+    public static class UnauthorizedException extends IOException {
+        @java.io.Serial
+        private static final long serialVersionUID = 1L;
+
+        private final int status;
+
+        UnauthorizedException(int status, String message) {
+            super(message);
+            this.status = status;
+        }
+
+        public int getStatus() {
+            return status;
+        }
+    }
+
     private static void requireSuccess(HttpResponse<String> response, String what) throws IOException {
+        if (response.statusCode() == 401 || response.statusCode() == 403) {
+            throw new UnauthorizedException(
+                    response.statusCode(), "Eyes returned HTTP " + response.statusCode() + " " + what);
+        }
         if (response.statusCode() / 100 != 2) {
             throw new IOException("Eyes returned HTTP " + response.statusCode() + " " + what);
         }
