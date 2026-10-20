@@ -135,6 +135,16 @@ The plugin hands everything to the Eyes SDK through `APPLITOOLS_*` environment v
 
 **Check that every suite actually ran.** `--exitcode false` also hides real errors: if `eyes-storybook` can't start a browser, it exits successfully having tested nothing, and the checks only reflect your other suites. After setup, confirm that the build log and the Eyes batch include your stories.
 
+### Check your setup so far
+
+Open **Manage Jenkins → Applitools setup**. It checks everything above, live:
+- the Eyes server and all three keys (validated against Eyes with requests that change nothing)
+- the GitHub Checks plugin and webhook signing
+- whether pull request webhooks are arriving
+- how each GitHub job will report (checks or commit statuses)
+
+Every ⚠️ or ❌ row says how to fix it. Fix those before moving on.
+
 ## 7. Add a Jenkinsfile
 
 Put **all** your visual tests inside **one** `applitools { }` block. Everything inside it shares one Eyes batch, one pair of checks, and one design review.
@@ -239,6 +249,8 @@ Branch names follow Eyes' `owner/repo/branch` convention, so baselines line up w
 `APPLITOOLS_API_KEY` (masked in logs), `APPLITOOLS_SERVER_URL`, `APPLITOOLS_BATCH_ID` (the PR's head commit), `APPLITOOLS_BATCH_NAME`, `APPLITOOLS_BATCH_SEQUENCE`, `APPLITOOLS_BRANCH_NAME`, `APPLITOOLS_PARENT_BRANCH_NAME`, `APPLITOOLS_DONT_CLOSE_BATCHES=true`.
 
 ## Troubleshooting
+
+**Start with Manage Jenkins → Applitools setup.** It catches most of the problems below and says how to fix each one.
 
 | Symptom | Cause and fix |
 | --- | --- |

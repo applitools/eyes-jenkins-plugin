@@ -32,8 +32,8 @@ public class GitHubCommitStatusPublisher extends CommitStatusPublisher {
         if (mode == Mode.STATUSES) {
             return true;
         }
-        // AUTO: checks need a GitHub App; anything else (a token) gets statuses.
-        return !(scanCredentials(source, github) instanceof GitHubAppCredentials);
+        // AUTO: checks need a GitHub App and the GitHub Checks plugin; otherwise statuses.
+        return !checksAvailable() || !(scanCredentials(source, github) instanceof GitHubAppCredentials);
     }
 
     @Override
@@ -59,6 +59,16 @@ public class GitHubCommitStatusPublisher extends CommitStatusPublisher {
         } finally {
             Connector.release(gh);
         }
+    }
+
+    static boolean checksAvailable() {
+        return jenkins.model.Jenkins.get().getPlugin("github-checks") != null;
+    }
+
+    /** True if the job connects to GitHub as a GitHub App (so it can post checks). */
+    public static boolean usesGitHubApp(SCMSource source) {
+        return source instanceof GitHubSCMSource github
+                && scanCredentials(source, github) instanceof GitHubAppCredentials;
     }
 
     private static StandardCredentials scanCredentials(SCMSource source, GitHubSCMSource github) {

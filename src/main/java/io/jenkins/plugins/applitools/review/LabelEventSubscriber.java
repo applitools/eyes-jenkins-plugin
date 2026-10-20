@@ -31,6 +31,18 @@ public class LabelEventSubscriber extends GHEventsSubscriber {
 
     private static final Logger LOGGER = Logger.getLogger(LabelEventSubscriber.class.getName());
 
+    /** When the last pull_request webhook arrived (since Jenkins started), for the setup page; 0 if none. */
+    private static volatile long lastPullRequestEvent;
+    private static volatile String lastPullRequestRepo;
+
+    public static long getLastPullRequestEvent() {
+        return lastPullRequestEvent;
+    }
+
+    public static String getLastPullRequestRepo() {
+        return lastPullRequestRepo;
+    }
+
     @Override
     protected boolean isApplicable(Item item) {
         return true;
@@ -43,6 +55,7 @@ public class LabelEventSubscriber extends GHEventsSubscriber {
 
     @Override
     protected void onEvent(GHSubscriberEvent event) {
+        recordEvent(event.getPayload());
         if (handleMerged(event.getPayload()) != null) {
             return;
         }
@@ -63,6 +76,16 @@ public class LabelEventSubscriber extends GHEventsSubscriber {
                 String.valueOf(payload.getNumber()),
                 payload.getLabel().getName(),
                 "labeled".equals(action));
+    }
+
+    private static void recordEvent(String payload) {
+        try {
+            net.sf.json.JSONObject repo = net.sf.json.JSONObject.fromObject(payload).optJSONObject("repository");
+            lastPullRequestRepo = repo != null ? repo.optString("full_name", null) : null;
+        } catch (RuntimeException e) {
+            lastPullRequestRepo = null;
+        }
+        lastPullRequestEvent = System.currentTimeMillis();
     }
 
     /**

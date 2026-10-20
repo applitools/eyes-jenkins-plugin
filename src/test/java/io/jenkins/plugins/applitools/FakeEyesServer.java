@@ -45,6 +45,8 @@ final class FakeEyesServer implements AutoCloseable {
     /** When set, merge requests with any other key get 403. */
     volatile String requiredMergeKey;
     private final java.util.concurrent.atomic.AtomicInteger mergePolls = new java.util.concurrent.atomic.AtomicInteger();
+    /** Keys Eyes doesn't recognize: every request with one gets 401. */
+    final List<String> invalidKeys = new CopyOnWriteArrayList<>();
     /** When set, GETs with any other key get 403, like Eyes does for run keys. */
     volatile String requiredReadKey;
     private final HttpServer server;
@@ -68,6 +70,10 @@ final class FakeEyesServer implements AutoCloseable {
         Matcher byPointer = BY_POINTER.matcher(path);
         Matcher session = SESSION.matcher(path);
         String key = exchange.getRequestHeaders().getFirst("X-Eyes-Api-Key");
+        if (invalidKeys.contains(key)) {
+            respond(exchange, 401, null);
+            return;
+        }
         if (path.equals("/api/baselines/branches/merge") && method.equals("POST")) {
             if (requiredMergeKey != null && !requiredMergeKey.equals(key)) {
                 respond(exchange, 403, null);

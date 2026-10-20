@@ -1,0 +1,126 @@
+package io.jenkins.plugins.applitools.setup;
+
+import com.cloudbees.plugins.credentials.CredentialsMatchers;
+import com.cloudbees.plugins.credentials.CredentialsProvider;
+import edu.umd.cs.findbugs.annotations.CheckForNull;
+import hudson.Extension;
+import hudson.security.ACL;
+import hudson.util.Secret;
+import io.jenkins.plugins.applitools.ApplitoolsGlobalConfiguration;
+import io.jenkins.plugins.applitools.EyesClient;
+import io.jenkins.plugins.applitools.review.PendingReview;
+import io.jenkins.plugins.applitools.review.ReviewRegistry;
+import java.io.IOException;
+import java.util.ArrayList;
+import java.util.List;
+import jenkins.model.Jenkins;
+import jenkins.model.JenkinsLocationConfiguration;
+import org.jenkinsci.plugins.plaincredentials.StringCredentials;
+
+/** Jenkins and Eyes: Jenkins URL, Eyes server, the three API keys (validated without side effects), reviews. */
+@Extension(ordinal = 100)
+public class CoreSetupChecks extends SetupCheck {
+
+    @Override
+    public List<SetupItem> run() throws InterruptedException {
+        List<SetupItem> items = new ArrayList<>();
+        ApplitoolsGlobalConfiguration config = ApplitoolsGlobalConfiguration.get();
+        items.add(jenkinsUrl());
+
+        String server = config.getServerUrl();
+        String runId = config.getCredentialsId();
+        String runKey = secret(runId);
+        if (runKey == null) {
+            items.add(SetupItem.problem("Eyes run key", "No Secret text credential with ID `" + runId + "`.",
+                    "Add your Eyes run key under Manage Jenkins → Credentials with that ID."));
+            return items;
+        }
+        EyesClient.KeyCheck run;
+        try {
+            run = new EyesClient(server, runKey).checkRead();
+        } catch (IOException e) {
+            items.add(SetupItem.problem("Eyes server", "Can't reach " + server + ": " + e.getMessage(),
+                    "Check the Eyes server URL and Jenkins' proxy settings."));
+            return items;
+        }
+        items.add(SetupItem.ok("Eyes server", server + " is reachable."));
+        items.add(run == EyesClient.KeyCheck.INVALID
+                ? SetupItem.problem("Eyes run key", "Eyes doesn't recognize the key in `" + runId + "`.",
+                        "Copy a run key from Eyes → Admin → API Keys into that credential.")
+                : SetupItem.ok("Eyes run key", "`" + runId + "` is valid."));
+
+        String readId = config.getReadCredentialsId() != null
+                ? config.getReadCredentialsId()
+                : ApplitoolsGlobalConfiguration.DEFAULT_READ_CREDENTIALS_ID;
+        items.add(keyRow("Eyes read key", readId, server, false,
+                "Without one, Jenkins can't read results: no build summary, and the PR checks fail with HTTP 403.",
+                "Create a read key in Eyes → Admin → API Keys and add it as Secret text `" + readId + "`."));
+
+        if (config.isMergeBaselines()) {
+            String mergeId = config.getMergeCredentialsId() != null
+                    ? config.getMergeCredentialsId()
+                    : ApplitoolsGlobalConfiguration.DEFAULT_MERGE_CREDENTIALS_ID;
+            items.add(keyRow("Eyes merge key", mergeId, server, true,
+                    "Without one, baselines aren't merged when a PR merges, and accepted changes show up again on"
+                            + " the target branch.",
+                    "Create a key with the merge option (tied to a team and a user) in Eyes → Admin → API Keys,"
+                            + " and add it as Secret text `" + mergeId + "`."));
+        } else {
+            items.add(SetupItem.info("Baseline merge", "Turned off in Manage Jenkins → System → Applitools Eyes."));
+        }
+
+        List<String> designers = ApplitoolsGlobalConfiguration.parseDesigners(config.getDesigners());
+        items.add(SetupItem.info("Designers", designers.isEmpty()
+                ? "Any reviewer in Eyes can approve design reviews."
+                : "Only " + String.join(", ", designers) + " can approve design reviews."));
+
+        List<PendingReview> reviews = ReviewRegistry.get().all();
+        long open = reviews.stream().filter(r -> !r.isSettled()).count();
+        items.add(SetupItem.info("Reviews", "Following " + reviews.size() + " build" + (reviews.size() == 1 ? "" : "s")
+                + "; " + open + " waiting on reviewers in Eyes (rechecked every minute)."));
+        return items;
+    }
+
+    private static SetupItem jenkinsUrl() {
+        String url = JenkinsLocationConfiguration.get().getUrl();
+        if (url == null) {
+            return SetupItem.warning("Jenkins URL", "Not set.",
+                    "Set it in Manage Jenkins → System → Jenkins Location, so links on PRs point back to Jenkins.");
+        }
+        if (url.contains("://localhost") || url.contains("://127.0.0.1")) {
+            return SetupItem.info("Jenkins URL", url + ": links to Jenkins on PRs only work on this machine."
+                    + " Links to Eyes aren't affected.");
+        }
+        return SetupItem.ok("Jenkins URL", url);
+    }
+
+    private static SetupItem keyRow(
+            String title, String id, String server, boolean merge, String whyNeeded, String howToAdd)
+            throws InterruptedException {
+        String key = secret(id);
+        if (key == null) {
+            return SetupItem.warning(title, "No Secret text credential with ID `" + id + "`. " + whyNeeded, howToAdd);
+        }
+        try {
+            EyesClient eyes = new EyesClient(server, key);
+            return switch (merge ? eyes.checkMerge() : eyes.checkRead()) {
+                case ALLOWED -> SetupItem.ok(title, "`" + id + "` is valid and allowed to "
+                        + (merge ? "merge baselines." : "read results."));
+                case NOT_ALLOWED -> SetupItem.problem(title, "Eyes accepts the key in `" + id + "` but won't let it "
+                        + (merge ? "merge baselines" : "read results") + ".", howToAdd);
+                case INVALID -> SetupItem.problem(title, "Eyes doesn't recognize the key in `" + id + "`.", howToAdd);
+            };
+        } catch (IOException e) {
+            return SetupItem.warning(title, "Couldn't check `" + id + "`: " + e.getMessage(), null);
+        }
+    }
+
+    @CheckForNull
+    private static String secret(String id) {
+        StringCredentials credentials = CredentialsMatchers.firstOrNull(
+                CredentialsProvider.lookupCredentialsInItemGroup(
+                        StringCredentials.class, Jenkins.get(), ACL.SYSTEM2, List.of()),
+                CredentialsMatchers.withId(id));
+        return credentials != null ? Secret.toString(credentials.getSecret()) : null;
+    }
+}

@@ -1,0 +1,130 @@
+package io.jenkins.plugins.applitools.setup;
+
+import static org.hamcrest.MatcherAssert.assertThat;
+import static org.hamcrest.Matchers.containsString;
+import static org.hamcrest.Matchers.is;
+
+import com.cloudbees.plugins.credentials.CredentialsScope;
+import com.cloudbees.plugins.credentials.SystemCredentialsProvider;
+import hudson.util.Secret;
+import io.jenkins.plugins.applitools.ApplitoolsGlobalConfiguration;
+import io.jenkins.plugins.applitools.FakeEyesServerAccess;
+import java.util.List;
+import org.htmlunit.html.HtmlPage;
+import org.jenkinsci.plugins.plaincredentials.impl.StringCredentialsImpl;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.jvnet.hudson.test.JenkinsRule;
+import org.jvnet.hudson.test.junit.jupiter.WithJenkins;
+
+@WithJenkins
+class SetupPageTest {
+
+    private static final String RUN = "run-key-0123456789";
+    private static final String READ = "read-key-0123456789";
+    private static final String MERGE = "merge-key-0123456789";
+
+    private JenkinsRule j;
+    private FakeEyesServerAccess eyes;
+
+    @BeforeEach
+    void setUp(JenkinsRule j) throws Exception {
+        this.j = j;
+        eyes = new FakeEyesServerAccess();
+        eyes.requireReadKey(READ);
+        eyes.requireMergeKey(MERGE);
+        ApplitoolsGlobalConfiguration.get().setServerUrl(eyes.url());
+        add(ApplitoolsGlobalConfiguration.DEFAULT_CREDENTIALS_ID, RUN);
+    }
+
+    @AfterEach
+    void tearDown() {
+        eyes.close();
+    }
+
+    private void add(String id, String value) throws java.io.IOException {
+        SystemCredentialsProvider.getInstance()
+                .getCredentials()
+                .add(new StringCredentialsImpl(CredentialsScope.GLOBAL, id, "", Secret.fromString(value)));
+        SystemCredentialsProvider.getInstance().save();
+    }
+
+    private SetupItem row(String title) throws InterruptedException {
+        return SetupCheck.runAll().stream()
+                .filter(i -> i.getTitle().equals(title))
+                .findFirst()
+                .orElseThrow(() -> new AssertionError("no row " + title));
+    }
+
+    @Test
+    void allKeysValid() throws Exception {
+        add(ApplitoolsGlobalConfiguration.DEFAULT_READ_CREDENTIALS_ID, READ);
+        add(ApplitoolsGlobalConfiguration.DEFAULT_MERGE_CREDENTIALS_ID, MERGE);
+
+        assertThat(row("Eyes server").getStatus(), is(SetupItem.Status.OK));
+        assertThat(row("Eyes run key").getStatus(), is(SetupItem.Status.OK));
+        assertThat(row("Eyes read key").getDetail(), containsString("allowed to read results"));
+        assertThat(row("Eyes merge key").getDetail(), containsString("allowed to merge baselines"));
+    }
+
+    @Test
+    void missingKeysAreWarningsWithTheFix() throws Exception {
+        SetupItem read = row("Eyes read key");
+        assertThat(read.getStatus(), is(SetupItem.Status.WARNING));
+        assertThat(read.getFix(), containsString("applitools-read-api-key"));
+        assertThat(row("Eyes merge key").getFix(), containsString("merge option"));
+    }
+
+    @Test
+    void wrongKindOfKeyIsAProblem() throws Exception {
+        add(ApplitoolsGlobalConfiguration.DEFAULT_READ_CREDENTIALS_ID, "a-write-key-not-read");
+        add(ApplitoolsGlobalConfiguration.DEFAULT_MERGE_CREDENTIALS_ID, READ); // read keys can't merge
+
+        assertThat(row("Eyes read key").getStatus(), is(SetupItem.Status.PROBLEM));
+        assertThat(row("Eyes read key").getDetail(), containsString("won't let it read results"));
+        assertThat(row("Eyes merge key").getDetail(), containsString("won't let it merge baselines"));
+    }
+
+    @Test
+    void unrecognizedRunKey() throws Exception {
+        eyes.invalid(RUN);
+
+        assertThat(row("Eyes run key").getStatus(), is(SetupItem.Status.PROBLEM));
+        assertThat(row("Eyes run key").getDetail(), containsString("doesn't recognize"));
+    }
+
+    @Test
+    void missingRunKeyStopsEarly() throws Exception {
+        SystemCredentialsProvider.getInstance().getCredentials().clear();
+
+        assertThat(row("Eyes run key").getStatus(), is(SetupItem.Status.PROBLEM));
+    }
+
+    @Test
+    void unreachableServer() throws Exception {
+        ApplitoolsGlobalConfiguration.get().setServerUrl("http://127.0.0.1:9");
+
+        assertThat(row("Eyes server").getStatus(), is(SetupItem.Status.PROBLEM));
+    }
+
+    @Test
+    void gitHubRowsWithoutJobsOrWebhooks() throws Exception {
+        assertThat(row("GitHub jobs").getStatus(), is(SetupItem.Status.WARNING));
+        assertThat(row("Pull request webhooks").getStatus(), is(SetupItem.Status.WARNING));
+        assertThat(row("Webhook signatures").getStatus(), is(SetupItem.Status.WARNING));
+    }
+
+    @Test
+    void pageRendersForAdmins() throws Exception {
+        add(ApplitoolsGlobalConfiguration.DEFAULT_READ_CREDENTIALS_ID, READ);
+        HtmlPage page = j.createWebClient().goTo("manage/applitools-setup");
+
+        String text = page.asNormalizedText();
+        assertThat(text, containsString("Applitools setup"));
+        assertThat(text, containsString("Eyes read key"));
+        assertThat(text, containsString("allowed to read results"));
+        List<?> rows = page.getByXPath("//table[@id='applitools-setup']/tbody/tr");
+        assertThat(rows.size() > 5, is(true));
+    }
+}

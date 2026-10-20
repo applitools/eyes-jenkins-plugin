@@ -73,6 +73,45 @@ public class EyesClient {
         return BatchResults.parse(batchId, json(response));
     }
 
+    /** What a key is allowed to do, judged from harmless requests. */
+    public enum KeyCheck {
+        /** Eyes doesn't recognize the key. */
+        INVALID,
+        /** Valid, but not allowed this operation. */
+        NOT_ALLOWED,
+        ALLOWED
+    }
+
+    /** Reads a batch that can't exist: 404 means the key may read results, 403 that it may not, 401 that it's invalid. */
+    @NonNull
+    public KeyCheck checkRead() throws IOException, InterruptedException {
+        HttpResponse<String> response = send(HttpRequest.newBuilder(
+                        uri("/api/sessions/batches/applitools-jenkins-setup-check/bypointerid"))
+                .GET());
+        return switch (response.statusCode()) {
+            case 401 -> KeyCheck.INVALID;
+            case 403 -> KeyCheck.NOT_ALLOWED;
+            default -> KeyCheck.ALLOWED;
+        };
+    }
+
+    /**
+     * Requests a real merge of two branches that can't exist, so nothing changes: 202 means the key may merge. (A
+     * check-only merge isn't enough: read keys may check.)
+     */
+    @NonNull
+    public KeyCheck checkMerge() throws IOException, InterruptedException {
+        HttpResponse<String> response = send(HttpRequest.newBuilder(uri("/api/baselines/branches/merge?SourceBranch="
+                        + encode("applitools-jenkins-setup-check/nonexistent/source") + "&TargetBranch="
+                        + encode("applitools-jenkins-setup-check/nonexistent/target") + "&OnlyCheck=false"))
+                .POST(HttpRequest.BodyPublishers.noBody()));
+        return switch (response.statusCode()) {
+            case 401 -> KeyCheck.INVALID;
+            case 202, 404 -> KeyCheck.ALLOWED;
+            default -> KeyCheck.NOT_ALLOWED;
+        };
+    }
+
     /** Outcome of a baseline branch merge job. */
     public record MergeResult(boolean merged, int conflicts, int changes) {}
 
