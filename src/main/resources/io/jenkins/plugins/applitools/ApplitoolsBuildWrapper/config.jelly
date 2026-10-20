@@ -9,10 +9,16 @@
   <f:entry title="When there are visual changes to review" field="onChanges">
     <f:enum>${it.name()}</f:enum>
   </f:entry>
+  <f:entry title="Expect at least this many Eyes tests" field="expectTests">
+    <f:number min="0" />
+  </f:entry>
   <f:entry field="checks">
     <f:checkbox title="Post the &quot;Applitools / Visual tests&quot; check on the commit" default="true" />
   </f:entry>
   <f:advanced>
+    <f:entry field="judgeDiffs">
+      <f:checkbox title="Tell SDKs not to fail the test command on visual differences (the plugin judges them)" default="true" />
+    </f:entry>
     <f:entry title="Eyes server URL" field="serverUrl">
       <f:textbox />
     </f:entry>

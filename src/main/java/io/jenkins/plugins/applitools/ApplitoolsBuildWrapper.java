@@ -85,6 +85,10 @@ public class ApplitoolsBuildWrapper extends SimpleBuildWrapper {
     private ChangesPolicy onChanges = ChangesPolicy.UNSTABLE;
     /** {@code null} (jobs saved before this option existed) means true. */
     private Boolean checks;
+    /** {@code null} (jobs saved before this option existed) means true. */
+    private Boolean judgeDiffs;
+    private Integer expectTests;
+    private List<String> expectApps;
     /** {@code null}: decided by the environment, then the PR label, then the global default. */
     private Boolean designReview;
     private String designReviewLabel;
@@ -215,6 +219,45 @@ public class ApplitoolsBuildWrapper extends SimpleBuildWrapper {
         this.checks = checks;
     }
 
+    public boolean isJudgeDiffs() {
+        return judgeDiffs == null || judgeDiffs;
+    }
+
+    /**
+     * Let the plugin judge visual differences: tells SDKs that support it (Storybook, Cypress) not to fail the test
+     * command on diffs, while still failing on errors. Playwright needs one config line instead (see the setup guide).
+     */
+    @DataBoundSetter
+    public void setJudgeDiffs(boolean judgeDiffs) {
+        this.judgeDiffs = judgeDiffs;
+    }
+
+    @CheckForNull
+    public Integer getExpectTests() {
+        return expectTests;
+    }
+
+    /** The batch must contain at least this many Eyes tests, or Visual tests fails. */
+    @DataBoundSetter
+    public void setExpectTests(Integer expectTests) {
+        this.expectTests = expectTests != null && expectTests > 0 ? expectTests : null;
+    }
+
+    @CheckForNull
+    public List<String> getExpectApps() {
+        return expectApps;
+    }
+
+    /** Each of these Eyes app names must report at least one test, or Visual tests fails. */
+    @DataBoundSetter
+    public void setExpectApps(List<String> expectApps) {
+        this.expectApps = expectApps == null || expectApps.isEmpty() ? null : new java.util.ArrayList<>(expectApps);
+    }
+
+    Expectations expectations() {
+        return new Expectations(expectTests, expectApps);
+    }
+
     @CheckForNull
     public Boolean getDesignReview() {
         return designReview;
@@ -300,6 +343,12 @@ public class ApplitoolsBuildWrapper extends SimpleBuildWrapper {
         // The plugin closes the batch once; stop each SDK runner from closing (and splitting) it.
         context.env(ENV_DONT_CLOSE_BATCHES, "true");
         context.env(ENV_MANAGED, "true");
+        if (isJudgeDiffs()) {
+            // The plugin judges diffs (yellow build + PR check), so SDKs shouldn't fail the command on them.
+            // Storybook's "nodiffs" still fails on errors (e.g. a browser that won't launch).
+            putUnlessSet(context, initialEnvironment, "APPLITOOLS_EXITCODE", "nodiffs");
+            putUnlessSet(context, initialEnvironment, "APPLITOOLS_FAIL_CYPRESS_ON_DIFF", "false");
+        }
         putIfNotNull(context, ENV_BATCH_SEQUENCE, batch.sequenceName());
         putIfNotNull(context, ENV_BRANCH_NAME, batch.branchName());
         putIfNotNull(context, ENV_PARENT_BRANCH_NAME, batch.parentBranchName());
@@ -329,7 +378,8 @@ public class ApplitoolsBuildWrapper extends SimpleBuildWrapper {
                 resultsTimeout,
                 onChanges,
                 isChecks(),
-                design));
+                design,
+                expectations()));
     }
 
     @Override
@@ -402,6 +452,12 @@ public class ApplitoolsBuildWrapper extends SimpleBuildWrapper {
         return value != null ? env.expand(value) : null;
     }
 
+    private static void putUnlessSet(Context context, EnvVars env, String key, String value) {
+        if (Util.fixEmpty(env.get(key)) == null) {
+            context.env(key, value);
+        }
+    }
+
     private static void putIfNotNull(Context context, String key, @CheckForNull String value) {
         if (value != null) {
             context.env(key, value);
@@ -432,6 +488,7 @@ public class ApplitoolsBuildWrapper extends SimpleBuildWrapper {
         private final boolean checks;
         @CheckForNull
         private final DesignSettings design;
+        private final Expectations expectations;
 
         /** Results, or why there are none (for the check's summary). */
         private record Collected(@CheckForNull BatchResults results, @CheckForNull String problem) {}
@@ -447,7 +504,8 @@ public class ApplitoolsBuildWrapper extends SimpleBuildWrapper {
                 int resultsTimeout,
                 ChangesPolicy onChanges,
                 boolean checks,
-                @CheckForNull DesignSettings design) {
+                @CheckForNull DesignSettings design,
+                Expectations expectations) {
             this.serverUrl = serverUrl;
             this.credentialsId = credentialsId;
             this.readCredentialsId = readCredentialsId;
@@ -459,6 +517,7 @@ public class ApplitoolsBuildWrapper extends SimpleBuildWrapper {
             this.onChanges = onChanges;
             this.checks = checks;
             this.design = design;
+            this.expectations = expectations;
         }
 
         @Override
@@ -480,8 +539,12 @@ public class ApplitoolsBuildWrapper extends SimpleBuildWrapper {
                 log.println(LOG_PREFIX + "closeBatch: false, leaving batch " + batchId + " open");
             } else if (!close(eyes, log)) {
                 // Nothing ran, so there are no results to collect; the gate must not pass on an empty run.
+                BatchResults none = expectations.apply(BatchResults.empty(batchId));
                 if (checks) {
-                    VisualTestsCheck.completed(build, listener, BatchResults.empty(batchId));
+                    VisualTestsCheck.completed(build, listener, none);
+                }
+                if (none.getExpectationProblem() != null) {
+                    apply(none, build, log); // fails the build: tests were expected
                 }
                 return;
             }
@@ -493,7 +556,8 @@ public class ApplitoolsBuildWrapper extends SimpleBuildWrapper {
                 return;
             }
             Collected collected = collect(reader(build, eyes, log), log);
-            BatchResults results = collected.results();
+            BatchResults fetched = collected.results();
+            BatchResults results = fetched != null ? expectations.apply(fetched) : null;
             if (results != null) {
                 ApplitoolsResultsAction.addTo(build, results);
                 if (checks) {
@@ -545,6 +609,7 @@ public class ApplitoolsBuildWrapper extends SimpleBuildWrapper {
                     design != null,
                     changed,
                     labelPresent);
+            review.setExpectations(expectations);
             review.setLastVisualState(ReviewEvaluator.visualState(results));
             try {
                 ReviewEvaluator.refreshDesign(review, build, listener, results, reader(build, null, log));

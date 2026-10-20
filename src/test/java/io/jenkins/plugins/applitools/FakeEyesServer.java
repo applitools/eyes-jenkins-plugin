@@ -154,7 +154,11 @@ final class FakeEyesServer implements AutoCloseable {
         exchange.close();
     }
 
-    record FakeTest(String id, String status) {}
+    record FakeTest(String id, String status, String app) {
+        FakeTest(String id, String status) {
+            this(id, status, "Fake app");
+        }
+    }
 
     /** Registers results for explicit tests (status: passed, unresolved, failed, new). */
     void results(String batchId, List<FakeTest> tests) {
@@ -164,10 +168,10 @@ final class FakeEyesServer implements AutoCloseable {
         StringBuilder array = new StringBuilder();
         for (FakeTest t : tests) {
             array.append(array.length() > 0 ? "," : "").append("""
-                    {"testId": "%s", "testName": "test %s", "status": "%s",
+                    {"testId": "%s", "testName": "test %s", "status": "%s", "appName": "%s",
                      "env": {"app": "Chrome", "os": "Linux"},
                      "sessionUrl": "https://eyes.example/app/test-results/eb-%s/%s"}""".formatted(
-                    t.id(), t.id(), t.status(), batchId, t.id()));
+                    t.id(), t.id(), t.status(), t.app(), batchId, t.id()));
         }
         results.put(batchId, """
                 {"statistics": {"id": "eb-%s", "pointerId": "%s", "name": "Fake batch", "passed": %d, "failed": %d,

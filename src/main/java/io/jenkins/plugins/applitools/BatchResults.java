@@ -50,6 +50,8 @@ public class BatchResults implements Serializable {
         /** Eyes test (session) ID; may be null for results recorded by older versions. */
         private final String id;
         private final String name;
+        /** Eyes app name (e.g. "Storybook Sandbox"); may be null for results recorded by older versions. */
+        private String appName;
         private final String environment;
         private final String status;
         private final String url;
@@ -68,6 +70,15 @@ public class BatchResults implements Serializable {
 
         public String getId() {
             return id;
+        }
+
+        public String getAppName() {
+            return appName;
+        }
+
+        Test withAppName(String appName) {
+            this.appName = appName;
+            return this;
         }
 
         public String getName() {
@@ -90,6 +101,8 @@ public class BatchResults implements Serializable {
     private final String batchId;
     /** Eyes' own batch ID (not the pointer we chose); needed for session-level API calls. */
     private String eyesBatchId;
+    /** Set when the batch didn't contain what the build expected (see {@link Expectations}). */
+    private String expectationProblem;
     private final String name;
     private final String url;
     private final int passed;
@@ -141,9 +154,12 @@ public class BatchResults implements Serializable {
             for (int i = 0; i < array.size(); i++) {
                 JSONObject t = array.getJSONObject(i);
                 tests.add(new Test(
-                        t.optString("testId", null),
-                        t.optString("testName"), environment(t.optJSONObject("env")), t.optString("status"),
-                        t.optString("sessionUrl", null)));
+                                t.optString("testId", null),
+                                t.optString("testName"),
+                                environment(t.optJSONObject("env")),
+                                t.optString("status"),
+                                t.optString("sessionUrl", null))
+                        .withAppName(t.optString("appName", null)));
             }
         }
         BatchResults results = new BatchResults(
@@ -174,8 +190,20 @@ public class BatchResults implements Serializable {
         return (app + (where.isEmpty() ? "" : " on " + where) + size).trim();
     }
 
+    void failExpectation(@NonNull String problem) {
+        this.expectationProblem = problem;
+    }
+
+    @CheckForNull
+    public String getExpectationProblem() {
+        return expectationProblem;
+    }
+
     @NonNull
     public Outcome getOutcome() {
+        if (expectationProblem != null) {
+            return Outcome.FAILED;
+        }
         if (total == 0) {
             return Outcome.NO_RESULTS;
         }
@@ -191,6 +219,9 @@ public class BatchResults implements Serializable {
     /** One-line summary for logs and check titles. */
     @NonNull
     public String getSummary() {
+        if (expectationProblem != null) {
+            return "Missing results: " + expectationProblem;
+        }
         return switch (getOutcome()) {
             case NO_RESULTS -> "No Eyes tests reported to this batch";
             case FAILED -> failed + " of " + total + " failed"

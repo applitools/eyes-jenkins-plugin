@@ -35,6 +35,8 @@ public class PendingReview {
     private transient int failures;
 
     private boolean labelPresent;
+    /** What the batch must contain; re-applied on every refresh so accepting other diffs can't pass the gate. */
+    private io.jenkins.plugins.applitools.Expectations expectations;
     private String lastVisualState;
     private String lastDesignState;
     private boolean settled;
@@ -218,6 +220,15 @@ public class PendingReview {
     /** What, if it changes, is worth saving to disk. */
     public String stateKey() {
         return lastVisualState + "|" + lastDesignState + "|" + settled + "|" + labelPresent;
+    }
+
+    @NonNull
+    public io.jenkins.plugins.applitools.Expectations getExpectations() {
+        return expectations != null ? expectations : io.jenkins.plugins.applitools.Expectations.NONE;
+    }
+
+    public void setExpectations(io.jenkins.plugins.applitools.Expectations expectations) {
+        this.expectations = expectations;
     }
 
     public boolean isPullRequest() {

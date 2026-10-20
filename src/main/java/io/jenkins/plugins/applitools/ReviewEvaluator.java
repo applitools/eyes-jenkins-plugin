@@ -30,6 +30,7 @@ public final class ReviewEvaluator {
         if (results == null) {
             return;
         }
+        review.getExpectations().apply(results);
         String visual = visualState(results);
         if (!visual.equals(review.getLastVisualState())) {
             ApplitoolsResultsAction.addTo(run, results);

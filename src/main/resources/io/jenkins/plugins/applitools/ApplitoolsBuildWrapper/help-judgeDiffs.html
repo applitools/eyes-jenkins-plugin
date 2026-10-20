@@ -1,0 +1,6 @@
+<div>
+  On by default. Inside the block, sets <code>APPLITOOLS_EXITCODE=nodiffs</code> (Storybook: diffs don't fail the command,
+  errors still do) and <code>APPLITOOLS_FAIL_CYPRESS_ON_DIFF=false</code> (Cypress), unless you've set them yourself. The
+  plugin then marks the build and the PR check based on the results. Playwright can't be configured this way; see the
+  setup guide for its one-line config.
+</div>
