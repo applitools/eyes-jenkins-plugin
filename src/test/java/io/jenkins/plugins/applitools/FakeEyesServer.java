@@ -28,11 +28,14 @@ final class FakeEyesServer implements AutoCloseable {
 
     private static final Pattern V1_BATCH = Pattern.compile("^/api/v1/batches/([^/]+)$");
     private static final Pattern BY_POINTER = Pattern.compile("^/api/sessions/batches/([^/]+)/bypointerid$");
+    private static final Pattern SESSION = Pattern.compile("^/api/sessions/batches/([^/]+)/([^/]+)$");
 
     final List<Request> requests = new CopyOnWriteArrayList<>();
     final List<String> unknownBatches = new CopyOnWriteArrayList<>();
     final Map<String, String> results = new ConcurrentHashMap<>();
     final Map<String, AtomicInteger> runningPolls = new ConcurrentHashMap<>();
+    /** Session ID → users who accepted that session's changes (as {@code lastAccept} from that session). */
+    final Map<String, List<String>> approvals = new ConcurrentHashMap<>();
     /** When set, GETs with any other key get 403, like Eyes does for run keys. */
     volatile String requiredReadKey;
     private final HttpServer server;
@@ -54,6 +57,7 @@ final class FakeEyesServer implements AutoCloseable {
 
         Matcher v1 = V1_BATCH.matcher(path);
         Matcher byPointer = BY_POINTER.matcher(path);
+        Matcher session = SESSION.matcher(path);
         String key = exchange.getRequestHeaders().getFirst("X-Eyes-Api-Key");
         if (method.equals("GET") && requiredReadKey != null && !requiredReadKey.equals(key)) {
             respond(exchange, 403, null);
@@ -66,6 +70,17 @@ final class FakeEyesServer implements AutoCloseable {
             AtomicInteger polls = runningPolls.get(byPointer.group(1));
             int running = polls != null ? Math.max(0, polls.getAndDecrement()) : 0;
             respond(exchange, 200, "{\"runningCount\":" + running + "}");
+        } else if (method.equals("GET") && session.matches() && !path.endsWith("/bypointerid")) {
+            String sessionId = session.group(2);
+            StringBuilder outputs = new StringBuilder();
+            for (String user : approvals.getOrDefault(sessionId, List.of())) {
+                outputs.append(outputs.length() > 0 ? "," : "")
+                        .append("{\"lastAccept\":{\"user\":\"%s\",\"sessionId\":\"%s\"}}".formatted(user, sessionId));
+            }
+            // A baseline accepted in an earlier session must not count as approval of this one.
+            outputs.append(outputs.length() > 0 ? "," : "")
+                    .append("{\"lastAccept\":{\"user\":\"old@example.com\",\"sessionId\":\"earlier\"}}");
+            respond(exchange, 200, "{\"id\":\"" + sessionId + "\",\"expectedAppOutput\":[" + outputs + "]}");
         } else {
             respond(exchange, 404, null);
         }
@@ -78,6 +93,29 @@ final class FakeEyesServer implements AutoCloseable {
             exchange.getResponseBody().write(bytes);
         }
         exchange.close();
+    }
+
+    record FakeTest(String id, String status) {}
+
+    /** Registers results for explicit tests (status: passed, unresolved, failed, new). */
+    void results(String batchId, List<FakeTest> tests) {
+        long passed = tests.stream().filter(t -> t.status().equals("passed") || t.status().equals("new")).count();
+        long failed = tests.stream().filter(t -> t.status().equals("failed")).count();
+        long unresolved = tests.stream().filter(t -> t.status().equals("unresolved")).count();
+        StringBuilder array = new StringBuilder();
+        for (FakeTest t : tests) {
+            array.append(array.length() > 0 ? "," : "").append("""
+                    {"testId": "%s", "testName": "test %s", "status": "%s",
+                     "env": {"app": "Chrome", "os": "Linux"},
+                     "sessionUrl": "https://eyes.example/app/test-results/eb-%s/%s"}""".formatted(
+                    t.id(), t.id(), t.status(), batchId, t.id()));
+        }
+        results.put(batchId, """
+                {"statistics": {"id": "eb-%s", "pointerId": "%s", "name": "Fake batch", "passed": %d, "failed": %d,
+                                "unresolved": %d, "new": 0, "aborted": 0, "total": %d},
+                 "batchUrl": "https://eyes.example/app/test-results/eb-%s",
+                 "tests": [%s]}
+                """.formatted(batchId, batchId, passed, failed, unresolved, tests.size(), batchId, array));
     }
 
     /** Registers results shaped like {@code GET /api/v1/batches/{id}}. */

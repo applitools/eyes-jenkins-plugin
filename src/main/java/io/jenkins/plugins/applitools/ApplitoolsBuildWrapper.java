@@ -21,6 +21,9 @@ import hudson.security.ACL;
 import hudson.tasks.BuildWrapperDescriptor;
 import hudson.util.ListBoxModel;
 import hudson.util.Secret;
+import io.jenkins.plugins.applitools.review.PendingReview;
+import io.jenkins.plugins.applitools.review.ReviewRegistry;
+import io.jenkins.plugins.applitools.scm.PullRequestLabels;
 import io.jenkins.plugins.applitools.scm.ScmInfo;
 import io.jenkins.plugins.applitools.scm.ScmInfoResolver;
 import java.io.IOException;
@@ -41,6 +44,8 @@ import org.kohsuke.stapler.AncestorInPath;
 import org.kohsuke.stapler.DataBoundConstructor;
 import org.kohsuke.stapler.DataBoundSetter;
 import org.kohsuke.stapler.QueryParameter;
+import org.kohsuke.stapler.StaplerRequest2;
+import net.sf.json.JSONObject;
 import org.kohsuke.stapler.verb.POST;
 
 /**
@@ -60,6 +65,8 @@ public class ApplitoolsBuildWrapper extends SimpleBuildWrapper {
     public static final String ENV_BRANCH_NAME = "APPLITOOLS_BRANCH_NAME";
     public static final String ENV_PARENT_BRANCH_NAME = "APPLITOOLS_PARENT_BRANCH_NAME";
     public static final String ENV_DONT_CLOSE_BATCHES = "APPLITOOLS_DONT_CLOSE_BATCHES";
+    /** Set to true/false to require or skip design review for the build. */
+    public static final String ENV_DESIGN_REVIEW = "APPLITOOLS_DESIGN_REVIEW";
     /** Marks env as set by this plugin, so nested blocks reuse the outer batch. */
     static final String ENV_MANAGED = "APPLITOOLS_JENKINS_MANAGED";
 
@@ -78,6 +85,10 @@ public class ApplitoolsBuildWrapper extends SimpleBuildWrapper {
     private ChangesPolicy onChanges = ChangesPolicy.UNSTABLE;
     /** {@code null} (jobs saved before this option existed) means true. */
     private Boolean checks;
+    /** {@code null}: decided by the environment, then the PR label, then the global default. */
+    private Boolean designReview;
+    private String designReviewLabel;
+    private String designers;
 
     static final int DEFAULT_RESULTS_TIMEOUT = 300;
 
@@ -204,6 +215,38 @@ public class ApplitoolsBuildWrapper extends SimpleBuildWrapper {
         this.checks = checks;
     }
 
+    @CheckForNull
+    public Boolean getDesignReview() {
+        return designReview;
+    }
+
+    /** Require (true) or skip (false) a designer's approval, regardless of PR labels. */
+    @DataBoundSetter
+    public void setDesignReview(Boolean designReview) {
+        this.designReview = designReview;
+    }
+
+    @CheckForNull
+    public String getDesignReviewLabel() {
+        return designReviewLabel;
+    }
+
+    @DataBoundSetter
+    public void setDesignReviewLabel(String designReviewLabel) {
+        this.designReviewLabel = Util.fixEmptyAndTrim(designReviewLabel);
+    }
+
+    @CheckForNull
+    public String getDesigners() {
+        return designers;
+    }
+
+    /** Eyes users who may approve, comma separated; overrides the global list. */
+    @DataBoundSetter
+    public void setDesigners(String designers) {
+        this.designers = Util.fixEmptyAndTrim(designers);
+    }
+
     /** Restores defaults for fields added after a job was saved. */
     @Serial
     protected Object readResolve() {
@@ -271,6 +314,7 @@ public class ApplitoolsBuildWrapper extends SimpleBuildWrapper {
             VisualTestsCheck.started(build, listener, batch.batchName());
         }
 
+        DesignSettings design = isChecks() ? designSettings(build, scm, initialEnvironment, log) : null;
         String explicitReadId = readCredentialsId != null
                 ? readCredentialsId
                 : ApplitoolsGlobalConfiguration.get().getReadCredentialsId();
@@ -284,13 +328,54 @@ public class ApplitoolsBuildWrapper extends SimpleBuildWrapper {
                 waitForResults,
                 resultsTimeout,
                 onChanges,
-                isChecks()));
+                isChecks(),
+                design));
     }
 
     @Override
     public ConsoleLogFilter createLoggerDecorator(@NonNull Run<?, ?> build) {
         String apiKey = lookupApiKey(build, effectiveCredentialsId());
         return apiKey == null ? null : new MaskApiKey(apiKey);
+    }
+
+    @CheckForNull
+    private DesignSettings designSettings(Run<?, ?> build, ScmInfo scm, EnvVars env, PrintStream log) {
+        ApplitoolsGlobalConfiguration global = ApplitoolsGlobalConfiguration.get();
+        Boolean forced = designReview;
+        String fromEnv = Util.fixEmptyAndTrim(env.get(ENV_DESIGN_REVIEW));
+        if (forced == null && fromEnv != null) {
+            forced = Boolean.parseBoolean(fromEnv);
+        }
+        if (!global.isDesignReviewCheck() && !Boolean.TRUE.equals(forced)) {
+            return null;
+        }
+        return new DesignSettings(
+                forced,
+                global.isDesignReviewByDefault(),
+                designReviewLabel != null ? designReviewLabel : global.getDesignReviewLabel(),
+                ApplitoolsGlobalConfiguration.parseDesigners(designers != null ? designers : global.getDesigners()),
+                build.getParent().getFullName(),
+                build.getNumber(),
+                scm.owner(),
+                scm.repository(),
+                scm.changeId());
+    }
+
+    /** Design-review inputs captured when the block starts; labels are read when it ends. */
+    record DesignSettings(
+            Boolean forced,
+            boolean byDefault,
+            String label,
+            List<String> designers,
+            String jobFullName,
+            int buildNumber,
+            String owner,
+            String repository,
+            String changeId)
+            implements Serializable {
+        ScmInfo scm() {
+            return new ScmInfo(owner, repository, null, null, null, changeId, null);
+        }
     }
 
     private String effectiveServerUrl() {
@@ -345,6 +430,8 @@ public class ApplitoolsBuildWrapper extends SimpleBuildWrapper {
         private final int resultsTimeout;
         private final ChangesPolicy onChanges;
         private final boolean checks;
+        @CheckForNull
+        private final DesignSettings design;
 
         /** Results, or why there are none (for the check's summary). */
         private record Collected(@CheckForNull BatchResults results, @CheckForNull String problem) {}
@@ -359,7 +446,8 @@ public class ApplitoolsBuildWrapper extends SimpleBuildWrapper {
                 boolean waitForResults,
                 int resultsTimeout,
                 ChangesPolicy onChanges,
-                boolean checks) {
+                boolean checks,
+                @CheckForNull DesignSettings design) {
             this.serverUrl = serverUrl;
             this.credentialsId = credentialsId;
             this.readCredentialsId = readCredentialsId;
@@ -370,6 +458,7 @@ public class ApplitoolsBuildWrapper extends SimpleBuildWrapper {
             this.resultsTimeout = resultsTimeout;
             this.onChanges = onChanges;
             this.checks = checks;
+            this.design = design;
         }
 
         @Override
@@ -409,6 +498,7 @@ public class ApplitoolsBuildWrapper extends SimpleBuildWrapper {
                 ApplitoolsResultsAction.addTo(build, results);
                 if (checks) {
                     VisualTestsCheck.completed(build, listener, results);
+                    track(build, listener, results);
                 }
                 apply(results, build, log);
             } else if (checks) {
@@ -418,17 +508,65 @@ public class ApplitoolsBuildWrapper extends SimpleBuildWrapper {
             }
         }
 
+        /** Posts the Design review check and hands the build to the watcher, so the checks follow reviews in Eyes. */
+        private void track(Run<?, ?> build, TaskListener listener, BatchResults results) throws InterruptedException {
+            PrintStream log = listener.getLogger();
+            boolean labelPresent = false;
+            if (design != null && design.forced() == null && design.changeId() != null) {
+                String wanted = design.label();
+                try {
+                    labelPresent = PullRequestLabels.of(build, design.scm()).stream()
+                            .anyMatch(l -> l.equalsIgnoreCase(wanted));
+                } catch (InterruptedException e) {
+                    throw e;
+                } catch (Exception e) {
+                    log.println(LOG_PREFIX + "WARNING: could not read pull request labels: " + e);
+                }
+            }
+            Set<String> changed = new java.util.TreeSet<>();
+            for (BatchResults.Test test : results.getTests()) {
+                if ("unresolved".equalsIgnoreCase(test.getStatus()) && test.getId() != null) {
+                    changed.add(test.getId());
+                }
+            }
+            PendingReview review = new PendingReview(
+                    build.getParent().getFullName(),
+                    build.getNumber(),
+                    batchId,
+                    serverUrl,
+                    credentialsId,
+                    readCredentialsId,
+                    design != null ? design.scm().repoSlug() : null,
+                    design != null ? design.changeId() : null,
+                    design != null ? design.forced() : Boolean.FALSE,
+                    design != null && design.byDefault(),
+                    design != null ? design.label() : ApplitoolsGlobalConfiguration.DEFAULT_DESIGN_REVIEW_LABEL,
+                    design != null ? design.designers() : List.of(),
+                    design != null,
+                    changed,
+                    labelPresent);
+            review.setLastVisualState(ReviewEvaluator.visualState(results));
+            try {
+                ReviewEvaluator.refreshDesign(review, build, listener, results, reader(build, null, log));
+            } catch (IOException e) {
+                log.println(LOG_PREFIX + "WARNING: could not evaluate design review: " + e.getMessage());
+            }
+            ReviewRegistry.get().register(review);
+        }
+
         /** Client for reading results: the read key if there is one, else the run key. */
         private EyesClient reader(Run<?, ?> build, EyesClient runKeyClient, PrintStream log) {
             String readKey = lookupApiKey(build, readCredentialsId);
             if (readKey != null) {
                 return new EyesClient(serverUrl, readKey);
             }
-            if (readCredentialsExplicit) {
+            if (readCredentialsExplicit && runKeyClient != null) {
                 log.println(LOG_PREFIX + "WARNING: no Secret text credential with ID '" + readCredentialsId
                         + "'; reading results with the run key instead");
             }
-            return runKeyClient;
+            return runKeyClient != null
+                    ? runKeyClient
+                    : new EyesClient(serverUrl, java.util.Objects.requireNonNull(lookupApiKey(build, credentialsId)));
         }
 
         /** @return false if Eyes has never heard of the batch */
@@ -525,6 +663,27 @@ public class ApplitoolsBuildWrapper extends SimpleBuildWrapper {
         @Override
         public boolean isApplicable(AbstractProject<?, ?> item) {
             return true;
+        }
+
+        public ListBoxModel doFillDesignReviewItems() {
+            ListBoxModel items = new ListBoxModel();
+            items.add("From PR label / global default", "");
+            items.add("Always require", "true");
+            items.add("Never require", "false");
+            return items;
+        }
+
+        /** The form's "from PR label" choice is an empty value, which data binding would turn into false. */
+        @Override
+        public ApplitoolsBuildWrapper newInstance(StaplerRequest2 req, @NonNull JSONObject formData)
+                throws FormException {
+            String mode = formData.optString("designReview", "");
+            // Jenkins may call this more than once with the same object, so don't modify it.
+            JSONObject rest = JSONObject.fromObject(formData);
+            rest.remove("designReview");
+            ApplitoolsBuildWrapper wrapper = (ApplitoolsBuildWrapper) super.newInstance(req, rest);
+            wrapper.setDesignReview(mode.isEmpty() ? null : Boolean.valueOf(mode));
+            return wrapper;
         }
 
         @NonNull

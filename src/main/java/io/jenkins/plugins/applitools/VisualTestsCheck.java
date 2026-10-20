@@ -125,16 +125,16 @@ final class VisualTestsCheck {
         return text == null ? "" : text.replace("|", "\\|").replace("\n", " ");
     }
 
-    private static LocalDateTime now() {
+    static LocalDateTime now() {
         return LocalDateTime.now(ZoneOffset.UTC);
     }
 
-    private static void publish(Run<?, ?> run, TaskListener listener, ChecksDetails details) {
+    static void publish(Run<?, ?> run, TaskListener listener, ChecksDetails details) {
         try {
             ChecksPublisherFactory.fromRun(run, listener).publish(details);
         } catch (RuntimeException e) {
             // A check that fails to post must never fail the build.
-            listener.getLogger().println(LOG_PREFIX + "WARNING: could not publish the '" + NAME + "' check: " + e);
+            listener.getLogger().println(LOG_PREFIX + "WARNING: could not publish the '" + details.getName().orElse(NAME) + "' check: " + e);
         }
     }
 }

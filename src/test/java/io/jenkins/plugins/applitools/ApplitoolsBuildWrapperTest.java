@@ -391,4 +391,19 @@ class ApplitoolsBuildWrapperTest {
         j.assertLogContains("script returned exit code 1", run);
         j.assertLogContains("Failed: 4 of 4 failed (4 aborted before any checkpoint reached Eyes)", run);
     }
+
+    @Test
+    void freestyleDesignReviewChoicesRoundtrip() throws Exception {
+        for (Boolean choice : new Boolean[] {null, true, false}) {
+            FreeStyleProject project = j.createFreeStyleProject();
+            ApplitoolsBuildWrapper wrapper = new ApplitoolsBuildWrapper();
+            wrapper.setDesignReview(choice);
+            wrapper.setDesigners("dana@example.com");
+            project.getBuildWrappersList().add(wrapper);
+
+            project = j.configRoundtrip(project);
+
+            j.assertEqualDataBoundBeans(wrapper, project.getBuildWrappersList().get(ApplitoolsBuildWrapper.class));
+        }
+    }
 }

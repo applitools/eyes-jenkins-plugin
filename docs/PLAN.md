@@ -101,8 +101,8 @@ The Design review check is **always posted** once the feature is on, even when i
 | **0. Sandbox** | GitHub App, smee relay, signed webhooks, multibranch job, Checks API posting | ✅ Done |
 | **1. Run** | `applitools {}`: credentials, masking, SCM detection (GitHub + env fallback), batch close, nested/parallel | ✅ Verified on a real PR |
 | **2. Results** | Fetch batch results (read key), build page summary and link, `applitoolsResults()`, `onChanges` policy, `waitForResults` | ✅ Verified on a real PR |
-| **3. Visual tests check** | Post the check from results, Details link to Eyes, optional PR comment | In progress |
-| **4. Design review gate** | Flag detection, Design review check, background watcher, label webhooks, designer identity, `applitoolsAwaitReview` | |
+| **3. Visual tests check** | Post the check from results, Details link to Eyes, optional PR comment | ✅ Verified on a real PR (PR comment not built) |
+| **4. Design review gate** | Flag detection, Design review check, background watcher, label webhooks, designer identity, `applitoolsAwaitReview` | ✅ Built and unit/integration tested; live verification pending. `applitoolsAwaitReview` not built yet |
 | **5. Baseline lifecycle** | Merge branch baselines on PR merge, `autoAcceptOn` | |
 | **6. Setup experience** | Test connection, setup checklist page, JCasC, sample Jenkinsfiles, 5-step guide | |
 | **7. Hardening** | Fork PRs, watcher timeouts and restarts, dedicated/on-prem Eyes, GitHub Enterprise | |

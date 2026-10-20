@@ -73,6 +73,32 @@ public class EyesClient {
         return BatchResults.parse(batchId, json(response));
     }
 
+    /**
+     * Who accepted this session's changes: users whose accept of a step's baseline came from this very session
+     * ({@code expectedAppOutput[].lastAccept.sessionId}). Empty if nothing in it was accepted, or not saved yet.
+     */
+    @NonNull
+    public java.util.Set<String> sessionApprovers(@NonNull String eyesBatchId, @NonNull String sessionId)
+            throws IOException, InterruptedException {
+        HttpResponse<String> response = send(HttpRequest.newBuilder(
+                        uri("/api/sessions/batches/" + encode(eyesBatchId) + "/" + encode(sessionId)))
+                .GET());
+        requireSuccess(response, "reading session " + sessionId);
+        java.util.Set<String> users = new java.util.TreeSet<>();
+        net.sf.json.JSONArray expected = json(response).optJSONArray("expectedAppOutput");
+        if (expected != null) {
+            for (int i = 0; i < expected.size(); i++) {
+                JSONObject accept = expected.optJSONObject(i) != null
+                        ? expected.getJSONObject(i).optJSONObject("lastAccept")
+                        : null;
+                if (accept != null && sessionId.equals(accept.optString("sessionId")) && accept.has("user")) {
+                    users.add(accept.getString("user"));
+                }
+            }
+        }
+        return users;
+    }
+
     private static JSONObject json(HttpResponse<String> response) throws IOException {
         try {
             return JSONObject.fromObject(response.body());

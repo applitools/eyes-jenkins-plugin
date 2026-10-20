@@ -10,5 +10,17 @@
     <f:entry title="Default read API key credential" field="readCredentialsId">
       <c:select />
     </f:entry>
+    <f:entry field="designReviewCheck">
+      <f:checkbox title="Post the &quot;Applitools / Design review&quot; check on pull requests" default="true" />
+    </f:entry>
+    <f:entry title="Design review label" field="designReviewLabel">
+      <f:textbox default="${descriptor.DEFAULT_DESIGN_REVIEW_LABEL}" />
+    </f:entry>
+    <f:entry title="Designers" field="designers">
+      <f:textarea />
+    </f:entry>
+    <f:entry field="designReviewByDefault">
+      <f:checkbox title="Require design review on every pull request, not just labeled ones" />
+    </f:entry>
   </f:section>
 </j:jelly>

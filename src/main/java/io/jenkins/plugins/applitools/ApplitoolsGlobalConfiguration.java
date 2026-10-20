@@ -29,6 +29,12 @@ public class ApplitoolsGlobalConfiguration extends GlobalConfiguration {
     private String serverUrl;
     private String credentialsId;
     private String readCredentialsId;
+    private String designReviewLabel;
+    private String designers;
+    private boolean designReviewByDefault;
+    private Boolean designReviewCheck;
+
+    public static final String DEFAULT_DESIGN_REVIEW_LABEL = "design-review";
 
     public static ApplitoolsGlobalConfiguration get() {
         return GlobalConfiguration.all().getInstance(ApplitoolsGlobalConfiguration.class);
@@ -73,6 +79,61 @@ public class ApplitoolsGlobalConfiguration extends GlobalConfiguration {
     public void setReadCredentialsId(String readCredentialsId) {
         this.readCredentialsId = Util.fixEmptyAndTrim(readCredentialsId);
         save();
+    }
+
+    /** PR label that requires a designer's approval. */
+    public String getDesignReviewLabel() {
+        return designReviewLabel != null ? designReviewLabel : DEFAULT_DESIGN_REVIEW_LABEL;
+    }
+
+    @DataBoundSetter
+    public void setDesignReviewLabel(String designReviewLabel) {
+        this.designReviewLabel = Util.fixEmptyAndTrim(designReviewLabel);
+        save();
+    }
+
+    /** Eyes users (emails) who may approve design reviews, comma or newline separated; empty means anyone. */
+    public String getDesigners() {
+        return designers;
+    }
+
+    @DataBoundSetter
+    public void setDesigners(String designers) {
+        this.designers = Util.fixEmptyAndTrim(designers);
+        save();
+    }
+
+    /** Require design review on every PR, not just labeled ones. */
+    public boolean isDesignReviewByDefault() {
+        return designReviewByDefault;
+    }
+
+    @DataBoundSetter
+    public void setDesignReviewByDefault(boolean designReviewByDefault) {
+        this.designReviewByDefault = designReviewByDefault;
+        save();
+    }
+
+    /** Post the "Applitools / Design review" check (skipped when not requested) so it can be a required check. */
+    public boolean isDesignReviewCheck() {
+        return designReviewCheck == null || designReviewCheck;
+    }
+
+    @DataBoundSetter
+    public void setDesignReviewCheck(boolean designReviewCheck) {
+        this.designReviewCheck = designReviewCheck;
+        save();
+    }
+
+    /** Splits a designers setting into a list. */
+    public static java.util.List<String> parseDesigners(String value) {
+        if (value == null) {
+            return java.util.List.of();
+        }
+        return java.util.Arrays.stream(value.split("[,\\s]+"))
+                .map(String::trim)
+                .filter(v -> !v.isEmpty())
+                .toList();
     }
 
     @POST

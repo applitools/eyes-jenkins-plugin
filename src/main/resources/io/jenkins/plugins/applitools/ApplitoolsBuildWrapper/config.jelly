@@ -37,5 +37,14 @@
     <f:entry title="Results timeout (seconds)" field="resultsTimeout">
       <f:number default="300" min="1" />
     </f:entry>
+    <f:entry title="Design review" field="designReview">
+      <f:select />
+    </f:entry>
+    <f:entry title="Design review label" field="designReviewLabel">
+      <f:textbox />
+    </f:entry>
+    <f:entry title="Designers" field="designers">
+      <f:textbox />
+    </f:entry>
   </f:advanced>
 </j:jelly>

@@ -47,16 +47,27 @@ public class BatchResults implements Serializable {
         @Serial
         private static final long serialVersionUID = 1L;
 
+        /** Eyes test (session) ID; may be null for results recorded by older versions. */
+        private final String id;
         private final String name;
         private final String environment;
         private final String status;
         private final String url;
 
         public Test(String name, String environment, String status, String url) {
+            this(null, name, environment, status, url);
+        }
+
+        public Test(String id, String name, String environment, String status, String url) {
+            this.id = id;
             this.name = name;
             this.environment = environment;
             this.status = status;
             this.url = url;
+        }
+
+        public String getId() {
+            return id;
         }
 
         public String getName() {
@@ -77,6 +88,8 @@ public class BatchResults implements Serializable {
     }
 
     private final String batchId;
+    /** Eyes' own batch ID (not the pointer we chose); needed for session-level API calls. */
+    private String eyesBatchId;
     private final String name;
     private final String url;
     private final int passed;
@@ -128,11 +141,12 @@ public class BatchResults implements Serializable {
             for (int i = 0; i < array.size(); i++) {
                 JSONObject t = array.getJSONObject(i);
                 tests.add(new Test(
+                        t.optString("testId", null),
                         t.optString("testName"), environment(t.optJSONObject("env")), t.optString("status"),
                         t.optString("sessionUrl", null)));
             }
         }
-        return new BatchResults(
+        BatchResults results = new BatchResults(
                 batchId,
                 stats.optString("name", null),
                 json.optString("batchUrl", null),
@@ -143,6 +157,8 @@ public class BatchResults implements Serializable {
                 stats.optInt("aborted"),
                 stats.optInt("total", tests.size()),
                 tests);
+        results.eyesBatchId = stats.optString("id", null);
+        return results;
     }
 
     private static String environment(@CheckForNull JSONObject env) {
@@ -208,6 +224,11 @@ public class BatchResults implements Serializable {
 
     public String getName() {
         return name;
+    }
+
+    @CheckForNull
+    public String getEyesBatchId() {
+        return eyesBatchId;
     }
 
     public String getUrl() {
