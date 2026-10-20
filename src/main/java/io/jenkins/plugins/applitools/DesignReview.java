@@ -19,7 +19,8 @@ import java.util.stream.Collectors;
 /**
  * The "Applitools / Design review" gate (Chromatic's "UI Review"). When a PR is flagged for design review, it passes
  * only once every visual change in the build has been accepted in Eyes, by someone on the designers list if there is
- * one. When it isn't flagged, the check is posted as skipped, so it can still be a required check.
+ * one. When it isn't flagged, the check is posted as skipped, so it can still be a required check. While waiting for
+ * a designer it's "action required", which (like any conclusion but success, neutral or skipped) blocks the merge.
  */
 final class DesignReview {
 
@@ -116,7 +117,11 @@ final class DesignReview {
             @NonNull Run<?, ?> run, @NonNull TaskListener listener, @NonNull Verdict verdict, String batchUrl) {
         ChecksDetails.ChecksDetailsBuilder details = new ChecksDetails.ChecksDetailsBuilder().withName(CHECK_NAME);
         switch (verdict.state()) {
-            case WAITING -> details.withStatus(ChecksStatus.IN_PROGRESS);
+            // Not IN_PROGRESS: GitHub won't move a completed check back to in progress, and this check is often
+            // completed (skipped) first and only later requested via the PR label.
+            case WAITING -> details.withStatus(ChecksStatus.COMPLETED)
+                    .withConclusion(ChecksConclusion.ACTION_REQUIRED)
+                    .withCompletedAt(VisualTestsCheck.now());
             case NOT_REQUESTED -> details.withStatus(ChecksStatus.COMPLETED)
                     .withConclusion(ChecksConclusion.SKIPPED)
                     .withCompletedAt(VisualTestsCheck.now());

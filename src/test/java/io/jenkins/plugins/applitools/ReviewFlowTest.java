@@ -106,7 +106,7 @@ public class ReviewFlowTest {
         WorkflowRun build = run("applitools(batchId: 'b1', designReview: true) { echo 'tests' }", Result.UNSTABLE);
 
         assertThat(latest(VisualTestsCheck.NAME).getConclusion(), is(ChecksConclusion.ACTION_REQUIRED));
-        assertThat(latest(DesignReview.CHECK_NAME).getStatus(), is(ChecksStatus.IN_PROGRESS));
+        assertThat(latest(DesignReview.CHECK_NAME).getConclusion(), is(ChecksConclusion.ACTION_REQUIRED));
         assertThat(review().isSettled(), is(false));
 
         watcherTick(); // nothing changed in Eyes yet: no re-posting
@@ -135,7 +135,7 @@ public class ReviewFlowTest {
 
         assertThat(latest(VisualTestsCheck.NAME).getConclusion(), is(ChecksConclusion.SUCCESS));
         ChecksDetails design = latest(DesignReview.CHECK_NAME);
-        assertThat(design.getStatus(), is(ChecksStatus.IN_PROGRESS));
+        assertThat(design.getConclusion(), is(ChecksConclusion.ACTION_REQUIRED));
         assertThat(design.getOutput().orElseThrow().getTitle().orElseThrow(), is("Waiting for a designer"));
         assertThat(review().isSettled(), is(false));
 
@@ -166,7 +166,7 @@ public class ReviewFlowTest {
         run("withEnv(['APPLITOOLS_DESIGN_REVIEW=true']) { applitools(batchId: 'b1') { echo 'tests' } }",
                 Result.UNSTABLE);
 
-        assertThat(latest(DesignReview.CHECK_NAME).getStatus(), is(ChecksStatus.IN_PROGRESS));
+        assertThat(latest(DesignReview.CHECK_NAME).getConclusion(), is(ChecksConclusion.ACTION_REQUIRED));
     }
 
     @Test
@@ -180,7 +180,7 @@ public class ReviewFlowTest {
         ReviewRegistry.get().register(LabelEventSubscriberTestAccess.asPullRequest(old, "acme/web", "7"));
         LabelEventSubscriberTestAccess.handleAndWait("acme/web", "7", "design-review", true);
 
-        assertThat(latest(DesignReview.CHECK_NAME).getStatus(), is(ChecksStatus.IN_PROGRESS));
+        assertThat(latest(DesignReview.CHECK_NAME).getConclusion(), is(ChecksConclusion.ACTION_REQUIRED));
         assertThat(review().isLabelPresent(), is(true));
         assertThat(build.getNumber(), is(1)); // no new build
 
