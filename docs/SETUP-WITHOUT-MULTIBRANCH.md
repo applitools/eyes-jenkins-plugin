@@ -24,10 +24,21 @@ If the GitHub plugin happens to be installed and receives webhooks, label change
 
 ## 2. Create a GitHub token
 
-Create a token that can post statuses and read pull requests on the repository:
+One token does everything: Jenkins checks out the repository with it, and the plugin posts statuses and reads the PR with it.
 
-- **Fine-grained token** (recommended): select the repository. Permissions: **Commit statuses: read and write**, **Pull requests: read**, **Contents: read**, **Metadata: read**.
-- **Classic token:** scope `repo` (or `repo:status` plus `public_repo` for a public repository).
+- **Fine-grained token** (recommended). Select the repository, then set **Repository permissions**:
+
+  | Permission | Access | Used for |
+  | --- | --- | --- |
+  | **Contents** | Read-only | Checking out the code (private repositories) |
+  | **Commit statuses** | Read and write | Posting Visual tests, Design review and Baseline merge |
+  | **Pull requests** | Read-only | Reading labels, and whether the PR merged |
+  | Metadata | Read-only | Required by GitHub; added automatically |
+
+  **Public repository?** You can drop Contents: Jenkins can check out without credentials.
+- **Classic token:** scope `repo`. That includes private-repository access.
+
+In an organization that requires approval for fine-grained tokens, an owner approves it under **Settings → Personal access tokens → Pending requests**. If the organization enforces SAML single sign-on, a classic token also needs **Configure SSO → Authorize**.
 
 For **GitHub Enterprise Server**, create it there and note your API URL (usually `https://github.example.com/api/v3`).
 
@@ -37,10 +48,12 @@ For **GitHub Enterprise Server**, create it there and note your API URL (usually
 
 | Kind | ID | Value |
 | --- | --- | --- |
-| Secret text | `github-token` | The GitHub token |
+| **Username with password** | `github-token` | Username: your GitHub username. Password: the token. |
 | Secret text | `applitools-api-key` | Your Eyes **run** key |
 | Secret text | `applitools-read-api-key` | Your Eyes **read** key |
 | Secret text | `applitools-merge-api-key` | Your Eyes **merge** key (team + user) |
+
+A **Username with password** credential works for both the checkout (the git plugin needs that kind) and the plugin, which reads the token from the password. For a public repository, a **Secret text** credential with just the token is enough.
 
 Then set **Designers** and the other options under **Manage Jenkins → System → Applitools Eyes**, as in step 4 of the [setup guide](SETUP.md#4-configure-jenkins).
 
@@ -54,7 +67,7 @@ Add `githubCredentialsId` to the `applitools` step. How the step learns which PR
 
 ### Triggered by GitHub Pull Request Builder (ghprb)
 
-Nothing more to pass: the plugin reads ghprb's `ghprbPullId`, `ghprbActualCommit` (the PR's head commit), `ghprbGhRepository`, `ghprbSourceBranch`, `ghprbTargetBranch` and `ghprbPullTitle`.
+Nothing more to pass: the plugin reads ghprb's `ghprbPullId`, `ghprbActualCommit` (the PR's head commit), `ghprbGhRepository`, `ghprbSourceBranch`, `ghprbTargetBranch` and `ghprbPullTitle`. For a private repository, select `github-token` as the credentials in the job's Git configuration (ghprb's own GitHub connection is configured separately, in its plugin settings).
 
 ```groovy
 node('playwright') {
@@ -95,6 +108,7 @@ pipeline {
         checkout scmGit(
           branches: [[name: env.PR_SHA]],
           userRemoteConfigs: [[url: "https://github.com/${env.PR_REPO}.git",
+                               credentialsId: 'github-token',   // private repo: the same token checks out
                                refspec: '+refs/pull/*/head:refs/remotes/origin/pr/*']])
       }
     }
@@ -111,6 +125,8 @@ pipeline {
   }
 }
 ```
+
+The checkout fetches `refs/pull/*/head`, which exists for every PR, so the PR's head commit can be checked out even when it comes from a branch Jenkins doesn't otherwise fetch.
 
 In the repository, add a webhook: **Settings → Webhooks → Add webhook**, payload URL `https://<your-jenkins>/generic-webhook-trigger/invoke?token=applitools-visual-review`, content type `application/json`, event **Pull requests**.
 
@@ -137,5 +153,6 @@ Open a PR so GitHub has seen the statuses, then in **Settings → Branches** (or
 | --- | --- |
 | Log: **"githubCredentialsId is set, but the repository or commit is unknown"** | Nothing told the step which PR it's testing. Pass `repo:` and `commit:` (and `pullRequest:` for PRs). |
 | Setup page: **"GitHub with a token … HTTP 401 / 403 / 404"** | The token is wrong, expired, or can't access the repository. Check its permissions (step 2). |
+| Checkout fails: **"Authentication failed"** or **"repository not found"** (private repo) | The checkout needs `credentialsId: 'github-token'` on a **Username with password** credential, and the token needs **Contents: read-only** on the repository. |
 | Statuses land on the wrong commit | `commit:` must be the PR's **head** commit (`pull_request.head.sha`), not a merge commit. |
 | A label change takes a while | Expected without webhooks: PRs are polled every minute in their first hour, every 5 minutes for the rest of the day, then every 30 minutes. |
