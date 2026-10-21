@@ -70,7 +70,7 @@ public class EyesTeamDesignersTest {
         eyes.results("b1", List.of(new FakeTest("s1", "unresolved")));
         WorkflowJob job = j.createProject(WorkflowJob.class);
         job.setDefinition(new CpsFlowDefinition(
-                "applitools(batchId: 'b1', designReview: true, designers: '" + designers + "') { echo 'tests' }",
+                "applitools(batchId: 'b1', designReview: true, designers: \"" + designers + "\") { echo 'tests' }",
                 true));
         j.assertBuildStatus(Result.UNSTABLE, job.scheduleBuild2(0));
         eyes.results("b1", List.of(new FakeTest("s1", "passed")));
@@ -120,6 +120,16 @@ public class EyesTeamDesignersTest {
         assertThat(title(design()), is("Designers couldn't be determined"));
         assertThat(design().getOutput().orElseThrow().getSummary().orElseThrow(),
                 containsString("Eyes team 'Desgin' not found"));
+    }
+
+    @Test
+    void teamNamesMayContainSpaces() throws Exception {
+        eyes.teams.put("Tim's Eyes Org", List.of("tim@example.com"));
+
+        assertThat(ApplitoolsGlobalConfiguration.parseDesigners("team:Tim's Eyes Org, lead@example.com\nx@example.com"),
+                is(List.of("team:Tim's Eyes Org", "lead@example.com", "x@example.com")));
+        buildWithChangesThenAcceptedBy("team:Tim's Eyes Org", "tim@example.com");
+        assertThat(design().getConclusion(), is(ChecksConclusion.SUCCESS));
     }
 
     @Test

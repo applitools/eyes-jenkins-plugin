@@ -175,7 +175,8 @@ public class ApplitoolsGlobalConfiguration extends GlobalConfiguration {
         if (value == null) {
             return java.util.List.of();
         }
-        return java.util.Arrays.stream(value.split("[,\\s]+"))
+        // Commas and new lines only: Eyes team names can contain spaces ("team:Tim's Eyes Org").
+        return java.util.Arrays.stream(value.split("[,\\n]+"))
                 .map(String::trim)
                 .filter(v -> !v.isEmpty())
                 .toList();

@@ -221,7 +221,7 @@ All are optional.
 | `onChanges` | `'UNSTABLE'` | Build result when there are changes to review: `'UNSTABLE'`, `'FAILURE'` or `'SUCCESS'` |
 | `designReview` | from label / env / global | `true` or `false` to require or skip design review |
 | `designReviewLabel` | `design-review` | PR label that requests design review |
-| `designers` | global setting | Who may approve: `team:<Eyes team>` and/or Eyes login emails, comma-separated |
+| `designers` | global setting | Who may approve: `team:<Eyes team>` and/or Eyes login emails, comma-separated. Use double quotes if a name has an apostrophe: `designers: "team:Tim's Eyes Org"` |
 | `checks` | `true` | Post the PR checks |
 | `expectTests` | none | Minimum number of Eyes tests; fewer fails Visual tests and the build |
 | `expectApps` | none | Eyes app names that must each report at least one test, e.g. `['Web', 'Storybook']` |
