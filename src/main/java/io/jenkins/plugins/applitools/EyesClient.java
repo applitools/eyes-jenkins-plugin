@@ -27,6 +27,11 @@ public class EyesClient {
         this.apiKey = apiKey;
     }
 
+    /** Identifies server + key for caches, without keeping the key itself. */
+    String cacheKey() {
+        return serverUrl + "|" + Integer.toHexString(apiKey.hashCode());
+    }
+
     public enum CloseResult {
         CLOSED,
         /** Eyes has no batch with this ID, usually because no tests ran inside the block. */
@@ -72,6 +77,59 @@ public class EyesClient {
         }
         requireSuccess(response, "reading results for batch " + batchId);
         return BatchResults.parse(batchId, json(response));
+    }
+
+    /** What Eyes says about a key: its team, organization, owner and permissions. */
+    public record KeyInfo(String teamId, String orgId, String user, java.util.List<String> permissions) {}
+
+    /** {@code GET /api/v1/auth/api-key-validation}. */
+    @NonNull
+    public KeyInfo keyInfo() throws IOException, InterruptedException {
+        HttpResponse<String> response =
+                send(HttpRequest.newBuilder(uri("/api/v1/auth/api-key-validation")).GET());
+        requireSuccess(response, "validating the API key");
+        JSONObject json = json(response);
+        java.util.List<String> permissions = new java.util.ArrayList<>();
+        net.sf.json.JSONArray array = json.optJSONArray("permissions");
+        for (int i = 0; array != null && i < array.size(); i++) {
+            permissions.add(array.getString(i));
+        }
+        return new KeyInfo(
+                json.optString("teamId", null), json.optString("orgId", null), json.optString("user", null), permissions);
+    }
+
+    /** An Eyes team ("account" in the admin API) and its members' login emails. */
+    public record Team(String id, String name, java.util.Set<String> members) {}
+
+    /** The organization's teams visible to this key ({@code GET /api/admin/orgs/{orgId}/accounts/}). */
+    @NonNull
+    public java.util.List<Team> teams(@NonNull String orgId) throws IOException, InterruptedException {
+        HttpResponse<String> response = send(HttpRequest.newBuilder(
+                        uri("/api/admin/orgs/" + encode(orgId) + "/accounts/?format=json"))
+                .GET());
+        requireSuccess(response, "listing Eyes teams");
+        java.util.List<Team> teams = new java.util.ArrayList<>();
+        net.sf.json.JSONArray array;
+        try {
+            array = net.sf.json.JSONArray.fromObject(response.body());
+        } catch (net.sf.json.JSONException e) {
+            throw new IOException("Eyes returned an unexpected team list: " + e.getMessage(), e);
+        }
+        for (int i = 0; i < array.size(); i++) {
+            JSONObject team = array.optJSONObject(i);
+            if (team == null) {
+                continue;
+            }
+            JSONObject members = team.optJSONObject("members");
+            java.util.Set<String> emails = new java.util.TreeSet<>();
+            if (members != null) {
+                for (Object key : members.keySet()) {
+                    emails.add(String.valueOf(key));
+                }
+            }
+            teams.add(new Team(team.optString("id", null), team.optString("name", ""), emails));
+        }
+        return teams;
     }
 
     /** What a key is allowed to do, judged from harmless requests. */

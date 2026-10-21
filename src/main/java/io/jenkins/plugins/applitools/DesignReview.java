@@ -10,11 +10,9 @@ import io.jenkins.plugins.checks.api.ChecksStatus;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
-import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.TreeSet;
-import java.util.stream.Collectors;
 
 /**
  * The "Applitools / Design review" gate (Chromatic's "UI Review"). When a PR is flagged for design review, it passes
@@ -40,7 +38,7 @@ final class DesignReview {
     /**
      * @param changedTestIds tests that had visual changes when the build ran
      * @param approvers for each changed test that's now accepted, who accepted it (only needed with designers)
-     * @param designers who may approve; empty means anyone reviewing in Eyes
+     * @param designers who may approve; {@link Designers#isAnyone()} means anyone reviewing in Eyes
      */
     @NonNull
     static Verdict evaluate(
@@ -49,7 +47,7 @@ final class DesignReview {
             @NonNull BatchResults results,
             @NonNull Collection<String> changedTestIds,
             @NonNull Map<String, Set<String>> approvers,
-            @NonNull Collection<String> designers) {
+            @NonNull Designers designers) {
         if (!required) {
             return new Verdict(
                     State.NOT_REQUESTED,
@@ -70,26 +68,27 @@ final class DesignReview {
                     State.WAITING,
                     "Waiting for design review",
                     results.getUnresolved() + " visual change" + (results.getUnresolved() == 1 ? "" : "s")
-                            + " to review in Eyes" + (designers.isEmpty() ? "." : " by a designer."));
+                            + " to review in Eyes" + (designers.isAnyone() ? "." : " by a designer."));
         }
         if (changedTestIds.isEmpty()) {
             return new Verdict(State.APPROVED, "No visual changes", "Nothing in this build needs design review.");
         }
-        if (designers.isEmpty()) {
+        if (designers.isAnyone()) {
             return new Verdict(
                     State.APPROVED,
                     "Approved",
                     changedTestIds.size() + " change" + (changedTestIds.size() == 1 ? "" : "s") + " accepted in Eyes.");
         }
+        if (designers.getAllowed().isEmpty()) {
+            return new Verdict(State.WAITING, "Designers couldn't be determined",
+                    "Nobody can approve until this is fixed: " + designers.getProblem() + ".");
+        }
 
-        Set<String> allowed = designers.stream().map(DesignReview::normalize).collect(Collectors.toSet());
         Set<String> approvedBy = new TreeSet<>();
         List<String> notByDesigner = new ArrayList<>();
         for (String testId : changedTestIds) {
             Set<String> who = approvers.getOrDefault(testId, Set.of());
-            List<String> designerApprovals = who.stream()
-                    .filter(u -> allowed.contains(normalize(u)))
-                    .toList();
+            List<String> designerApprovals = who.stream().filter(designers::allows).toList();
             if (designerApprovals.isEmpty()) {
                 notByDesigner.addAll(who);
             } else {
@@ -103,14 +102,11 @@ final class DesignReview {
                     "Waiting for a designer",
                     "Changes were accepted"
                             + (others.isEmpty() ? "" : " by " + String.join(", ", others))
-                            + ", but a designer (" + String.join(", ", designers) + ") must approve them.");
+                            + ", but a designer (" + designers.describe() + ") must approve them."
+                            + (designers.getProblem() != null ? " Note: " + designers.getProblem() + "." : ""));
         }
         return new Verdict(State.APPROVED, "Approved by " + String.join(", ", approvedBy),
                 "Every visual change was accepted by a designer.");
-    }
-
-    private static String normalize(String user) {
-        return user.trim().toLowerCase(Locale.ROOT);
     }
 
     static void publish(

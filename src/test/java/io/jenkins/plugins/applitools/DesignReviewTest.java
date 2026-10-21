@@ -33,7 +33,7 @@ class DesignReviewTest {
     private static Verdict eval(
             boolean required, BatchResults r, Set<String> changed, Map<String, Set<String>> approvers,
             List<String> designers) {
-        return DesignReview.evaluate(required, "design-review", r, changed, approvers, designers);
+        return DesignReview.evaluate(required, "design-review", r, changed, approvers, Designers.of(designers));
     }
 
     @Test

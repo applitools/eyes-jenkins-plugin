@@ -7,6 +7,7 @@ import hudson.Extension;
 import hudson.security.ACL;
 import hudson.util.Secret;
 import io.jenkins.plugins.applitools.ApplitoolsGlobalConfiguration;
+import io.jenkins.plugins.applitools.Designers;
 import io.jenkins.plugins.applitools.EyesClient;
 import io.jenkins.plugins.applitools.review.PendingReview;
 import io.jenkins.plugins.applitools.review.ReviewRegistry;
@@ -69,10 +70,7 @@ public class CoreSetupChecks extends SetupCheck {
             items.add(SetupItem.info("Baseline merge", "Turned off in Manage Jenkins → System → Applitools Eyes."));
         }
 
-        List<String> designers = ApplitoolsGlobalConfiguration.parseDesigners(config.getDesigners());
-        items.add(SetupItem.info("Designers", designers.isEmpty()
-                ? "Any reviewer in Eyes can approve design reviews."
-                : "Only " + String.join(", ", designers) + " can approve design reviews."));
+        items.add(designersRow(config, server, secret(readId) != null ? secret(readId) : runKey));
 
         List<PendingReview> reviews = ReviewRegistry.get().all();
         List<String> waiting = reviews.stream()
@@ -101,6 +99,32 @@ public class CoreSetupChecks extends SetupCheck {
         return items;
     }
 
+    private static SetupItem designersRow(ApplitoolsGlobalConfiguration config, String server, String key)
+            throws InterruptedException {
+        List<String> entries = ApplitoolsGlobalConfiguration.parseDesigners(config.getDesigners());
+        if (entries.isEmpty()) {
+            return SetupItem.info("Designers", "Any reviewer in Eyes can approve design reviews.");
+        }
+        if (!Designers.anyTeams(entries)) {
+            return SetupItem.info("Designers", "Only " + String.join(", ", entries) + " can approve design reviews.");
+        }
+        try {
+            Designers designers = Designers.resolve(entries, new EyesClient(server, key));
+            String who = designers.getAllowed().isEmpty()
+                    ? "nobody"
+                    : String.join(", ", designers.getAllowed());
+            if (designers.getProblem() != null) {
+                return SetupItem.warning("Designers", designers.getProblem() + ". Approvers right now: " + who + ".",
+                        "Check the team name in Manage Jenkins → System → Applitools Eyes → Designers matches a team"
+                                + " in Eyes → Admin → Teams.");
+            }
+            return SetupItem.ok("Designers", designers.describe() + " → " + who + " can approve design reviews.");
+        } catch (IOException e) {
+            return SetupItem.warning("Designers", "Couldn't read Eyes teams: " + e.getMessage(),
+                    "Team lookups use the read key; make sure it's valid.");
+        }
+    }
+
     private static SetupItem jenkinsUrl() {
         String url = JenkinsLocationConfiguration.get().getUrl();
         if (url == null) {
@@ -125,13 +149,23 @@ public class CoreSetupChecks extends SetupCheck {
             EyesClient eyes = new EyesClient(server, key);
             return switch (merge ? eyes.checkMerge() : eyes.checkRead()) {
                 case ALLOWED -> SetupItem.ok(title, "\"" + id + "\" is valid and allowed to "
-                        + (merge ? "merge baselines." : "read results."));
+                        + (merge ? "merge baselines." : "read results.") + permissions(eyes));
                 case NOT_ALLOWED -> SetupItem.problem(title, "Eyes accepts the key in \"" + id + "\" but won't let it "
                         + (merge ? "merge baselines" : "read results") + ".", howToAdd);
                 case INVALID -> SetupItem.problem(title, "Eyes doesn't recognize the key in \"" + id + "\".", howToAdd);
             };
         } catch (IOException e) {
             return SetupItem.warning(title, "Couldn't check \"" + id + "\": " + e.getMessage(), null);
+        }
+    }
+
+    /** " Permissions: read, merge." from Eyes, or "" if it won't say. */
+    private static String permissions(EyesClient eyes) throws InterruptedException {
+        try {
+            List<String> p = eyes.keyInfo().permissions();
+            return p.isEmpty() ? "" : " Permissions: " + String.join(", ", p) + ".";
+        } catch (IOException e) {
+            return "";
         }
     }
 

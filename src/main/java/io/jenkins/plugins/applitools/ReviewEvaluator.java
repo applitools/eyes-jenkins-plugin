@@ -54,7 +54,7 @@ public final class ReviewEvaluator {
                 results,
                 review.getChangedTestIds(),
                 approversIfNeeded(review, results, reader),
-                review.getDesigners());
+                designers(review, reader));
         String design = verdict.state() + ": " + verdict.title();
         if (review.isDesignCheck() && !design.equals(review.getLastDesignState())) {
             DesignReview.publish(run, listener, verdict, results.getUrl());
@@ -63,6 +63,15 @@ public final class ReviewEvaluator {
         }
         review.setSettled(results.getOutcome() != BatchResults.Outcome.CHANGES
                 && verdict.state() != DesignReview.State.WAITING);
+    }
+
+    /** Expands {@code team:} entries only when a review actually needs them. */
+    private static Designers designers(PendingReview review, EyesClient reader)
+            throws IOException, InterruptedException {
+        if (!review.isDesignReviewRequired() || !Designers.anyTeams(review.getDesigners())) {
+            return Designers.of(review.getDesigners());
+        }
+        return Designers.resolve(review.getDesigners(), reader);
     }
 
     static String visualState(BatchResults results) {

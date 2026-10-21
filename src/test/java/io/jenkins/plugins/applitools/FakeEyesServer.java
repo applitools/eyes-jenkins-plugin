@@ -45,6 +45,8 @@ final class FakeEyesServer implements AutoCloseable {
     /** When set, merge requests with any other key get 403. */
     volatile String requiredMergeKey;
     private final java.util.concurrent.atomic.AtomicInteger mergePolls = new java.util.concurrent.atomic.AtomicInteger();
+    /** Eyes teams in the fake org: name → member emails. */
+    final Map<String, List<String>> teams = new ConcurrentHashMap<>();
     /** Keys Eyes doesn't recognize: every request with one gets 401. */
     final List<String> invalidKeys = new CopyOnWriteArrayList<>();
     /** When set, GETs with any other key get 403, like Eyes does for run keys. */
@@ -76,6 +78,25 @@ final class FakeEyesServer implements AutoCloseable {
         String key = exchange.getRequestHeaders().getFirst("X-Eyes-Api-Key");
         if (invalidKeys.contains(key)) {
             respond(exchange, 401, null);
+            return;
+        }
+        if (path.equals("/api/v1/auth/api-key-validation")) {
+            respond(exchange, 200, "{\"teamId\":\"team-1\",\"orgId\":\"org-1\",\"user\":\"ci@example.com\","
+                    + "\"permissions\":[\"read\"]}");
+            return;
+        }
+        if (path.equals("/api/admin/orgs/org-1/accounts/")) {
+            StringBuilder json = new StringBuilder("[");
+            teams.forEach((name, members) -> {
+                json.append(json.length() > 1 ? "," : "").append("{\"id\":\"id-").append(name)
+                        .append("\",\"name\":\"").append(name).append("\",\"members\":{");
+                for (int i = 0; i < members.size(); i++) {
+                    json.append(i > 0 ? "," : "").append("\"").append(members.get(i))
+                            .append("\":{\"name\":\"").append(members.get(i)).append("\",\"isAdmin\":false}");
+                }
+                json.append("}}");
+            });
+            respond(exchange, 200, json.append("]").toString());
             return;
         }
         if (path.equals("/api/baselines/branches/merge") && method.equals("POST")) {
