@@ -247,17 +247,23 @@ class ApplitoolsBuildWrapperTest {
     }
 
     @Test
-    void changesMarkBuildUnstableByDefault() throws Exception {
+    void changesLeaveTheBuildGreenByDefault() throws Exception {
         eyes.results("b1", 1, 0, 2, 0, 0);
         WorkflowRun run = runPipeline(
                 """
                 applitools(batchId: 'b1') { echo 'tests' }
                 echo "after block: ${applitoolsResults().status}"
                 """,
-                Result.UNSTABLE);
+                Result.SUCCESS);
 
         j.assertLogContains("Changes to review: 2 of 3 with visual changes to review", run);
         j.assertLogContains("after block: CHANGES", run); // the pipeline keeps going
+    }
+
+    @Test
+    void changesCanMarkTheBuildUnstable() throws Exception {
+        eyes.results("b1", 1, 0, 2, 0, 0);
+        runPipeline("applitools(batchId: 'b1', onChanges: 'UNSTABLE') { echo 'tests' }", Result.UNSTABLE);
     }
 
     @Test

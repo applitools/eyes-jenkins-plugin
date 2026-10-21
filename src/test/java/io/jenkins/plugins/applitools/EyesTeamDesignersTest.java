@@ -72,7 +72,7 @@ public class EyesTeamDesignersTest {
         job.setDefinition(new CpsFlowDefinition(
                 "applitools(batchId: 'b1', designReview: true, designers: \"" + designers + "\") { echo 'tests' }",
                 true));
-        j.assertBuildStatus(Result.UNSTABLE, job.scheduleBuild2(0));
+        j.assertBuildStatus(Result.SUCCESS, job.scheduleBuild2(0));
         eyes.results("b1", List.of(new FakeTest("s1", "passed")));
         eyes.approvals.put("s1", List.of(approver));
         ExtensionList.lookupSingleton(ReviewWatcher.class).execute(TaskListener.NULL);

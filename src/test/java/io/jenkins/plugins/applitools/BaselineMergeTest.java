@@ -53,7 +53,7 @@ public class BaselineMergeTest {
         eyes.results("b1", List.of(new FakeTest("s1", "unresolved")));
         WorkflowJob job = j.createProject(WorkflowJob.class);
         job.setDefinition(new CpsFlowDefinition("applitools(batchId: 'b1') { echo 'tests' }", true));
-        j.assertBuildStatus(Result.UNSTABLE, job.scheduleBuild2(0));
+        j.assertBuildStatus(Result.SUCCESS, job.scheduleBuild2(0));
         // Plain test pipelines aren't PRs; pretend this build is PR #7 of acme/web.
         PendingReview review = ReviewRegistry.get().all().get(0);
         ReviewRegistry.get().register(LabelEventSubscriberTestAccess.asPullRequest(review, "acme/web", "7"));
@@ -171,6 +171,38 @@ public class BaselineMergeTest {
                 """;
 
         assertThat(LabelEventSubscriberTestAccess.handleMergedPayloadAndWait(payload), is(true));
+        assertThat(eyes.merges, contains("acme/web/feature -> acme/web/main (false)"));
+    }
+
+    @Test
+    void stepCanTurnMergingOff() throws Exception {
+        eyes.results("b2", List.of(new FakeTest("s1", "unresolved")));
+        WorkflowJob job = j.createProject(WorkflowJob.class);
+        job.setDefinition(new CpsFlowDefinition(
+                "applitools(batchId: 'b2', mergeBaselines: false) { echo 'tests' }", true));
+        j.assertBuildStatus(Result.SUCCESS, job.scheduleBuild2(0));
+        PendingReview review = ReviewRegistry.get().all().stream()
+                .filter(r -> r.getBatchId().equals("b2"))
+                .findFirst()
+                .orElseThrow();
+        PendingReview asPr = LabelEventSubscriberTestAccess.asPullRequest(review, "acme/web", "8");
+        asPr.setMergeBaselines(false);
+        ReviewRegistry.get().register(asPr);
+
+        LabelEventSubscriberTestAccess.mergedAndWait("acme/web", "8", true, "feature", "main");
+
+        assertThat(eyes.merges, empty());
+    }
+
+    @Test
+    void stepCanTurnMergingOnWhenGloballyOff() throws Exception {
+        ApplitoolsGlobalConfiguration.get().setMergeBaselines(false);
+        PendingReview review = ReviewRegistry.get().all().get(0);
+        review.setMergeBaselines(true);
+        ReviewRegistry.get().saveQuietly();
+
+        LabelEventSubscriberTestAccess.mergedAndWait("acme/web", "7", true, "feature", "main");
+
         assertThat(eyes.merges, contains("acme/web/feature -> acme/web/main (false)"));
     }
 }

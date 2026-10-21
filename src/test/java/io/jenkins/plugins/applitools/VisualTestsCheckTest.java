@@ -98,7 +98,7 @@ public class VisualTestsCheckTest {
     @Test
     void changesRequireAction() throws Exception {
         eyes.results("b1", 1, 0, 2, 0, 0);
-        run("applitools(batchId: 'b1') { echo 'tests' }", Result.UNSTABLE);
+        run("applitools(batchId: 'b1') { echo 'tests' }", Result.SUCCESS);
 
         ChecksDetails check = completed();
         assertThat(check.getConclusion(), is(ChecksConclusion.ACTION_REQUIRED));

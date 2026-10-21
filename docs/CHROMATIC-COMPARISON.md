@@ -44,7 +44,7 @@ Both columns assume Jenkins already builds pull requests. Chromatic's Jenkins gu
 - **No second GitHub integration.** Chromatic needs repo access granted to an outside SaaS. We use the GitHub App Jenkins already has, so security reviews are simpler.
 - **Any Eyes SDK, one step.** Playwright, Cypress, Selenium or Storybook: wrap the command. Chromatic's non-Storybook flows need artifact archiving and archive-location variables.
 - **Design review per PR, on demand,** by label, with instant updates and no rebuild.
-- **Results in Jenkins too:** build page summary, yellow builds, `applitoolsResults()` for custom logic.
+- **Results in Jenkins too:** build page summary and `applitoolsResults()` for custom logic, without turning builds red for changes awaiting review.
 - **Real cross-browser and device rendering** through the Ultrafast Grid (Chromatic also offers multiple browsers, so this is roughly parity).
 
 ## Closing the gap

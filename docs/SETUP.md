@@ -202,7 +202,7 @@ Don't require `Applitools / Baseline merge`: it only appears after a pull reques
 ## 9. Try it
 
 1. **Open a pull request.** Within a minute, both checks appear. With no visual changes, Visual tests is ✅ and Design review is ➖ *skipped*.
-2. **Make a visual change** and push. Visual tests turns ⚠️ *action required*, and the build turns yellow (unstable).
+2. **Make a visual change** and push. Visual tests turns ⚠️ *action required*. The Jenkins build stays green: waiting on review isn't a failed run.
 3. **Add the `design-review` label** to the PR. Design review turns ⚠️ *waiting for design review* right away.
 4. **Click Details** on either check. It opens the batch in Eyes. Accept the changes and **save**.
 5. Within a minute, both checks turn ✅. With designers set, Design review reads *Approved by …*, and only a designer's approval counts: someone in the Eyes team, or listed by email.
@@ -222,7 +222,8 @@ All are optional.
 | `credentialsId` | `applitools-api-key` | Secret text credential with the Eyes run key |
 | `readCredentialsId` | `applitools-read-api-key` (if it exists), else the run key | Key used to read results |
 | `serverUrl` | global setting | Eyes server, for dedicated or on-prem |
-| `onChanges` | `'UNSTABLE'` | Build result when there are changes to review: `'UNSTABLE'`, `'FAILURE'` or `'SUCCESS'` |
+| `onChanges` | `'SUCCESS'` | Build result when there are changes to review: `'SUCCESS'` (green: the PR results are the gate), `'UNSTABLE'` or `'FAILURE'`. Rejected or aborted tests and missing results always fail the build. |
+| `mergeBaselines` | global setting | `true`/`false`: merge this job's Eyes baselines into the target branch's **when its PR merges** (only then) |
 | `designReview` | from label / env / global | `true` or `false` to require or skip design review |
 | `designReviewLabel` | `design-review` | PR label that requests design review |
 | `designers` | global setting | Who may approve: `team:<Eyes team>` and/or Eyes login emails, comma-separated. Use double quotes if a name has an apostrophe: `designers: "team:Tim's Eyes Org"` |
@@ -265,7 +266,7 @@ Branch names follow Eyes' `owner/repo/branch` convention, so baselines line up w
 | Webhook deliveries show **400** | Signature mismatch: the secret in the GitHub App and in `github-webhook-secret` differ. |
 | Log: **"Eyes refused to share results (HTTP 403)"** | Run keys can't read results. Add the `applitools-read-api-key` credential. |
 | Log: **"No Secret text credential with ID …"** | The credential ID doesn't match exactly (check spelling). |
-| Build is **red** on visual changes instead of yellow | An SDK is failing the command on diffs. Playwright: add the `failTestsOnDiff` line from step 6. Storybook/Cypress: check you haven't set `APPLITOOLS_EXITCODE` / `APPLITOOLS_FAIL_CYPRESS_ON_DIFF` yourself, and that `judgeDiffs` isn't `false`. |
+| Build is **red** on visual changes | An SDK is failing the command on diffs. Playwright: add the `failTestsOnDiff` line from step 6. Storybook/Cypress: check you haven't set `APPLITOOLS_EXITCODE` / `APPLITOOLS_FAIL_CYPRESS_ON_DIFF` yourself, and that `judgeDiffs` isn't `false`. |
 | **Visual tests: "Missing results: no tests from …"** | A suite reported nothing to Eyes. Look in the build log for that suite's error (e.g. a browser that wouldn't start). |
 | Checks never appear on the PR | With a GitHub App credential, the **GitHub Checks** plugin must be installed. With a token, look for **commit statuses** instead (same names), and make sure the token can write them. |
 | **Build Now** on the multibranch job doesn't build | At the top level it only rescans the repo. Open the PR's job (**Pull Requests → PR-N**) and click Build Now there. |

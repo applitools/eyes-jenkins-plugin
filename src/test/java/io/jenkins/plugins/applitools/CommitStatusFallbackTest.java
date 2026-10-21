@@ -102,19 +102,21 @@ public class CommitStatusFallbackTest {
 
         assertThat(posted(), contains(
                 "Applitools / Visual tests = PENDING | Running visual tests",
+                "Applitools / Design review = PENDING | Waiting for visual tests",
                 "Applitools / Visual tests = SUCCESS | 1 passed",
                 "Applitools / Design review = SUCCESS | Not requested"));
-        assertThat(TokenJobStatuses.POSTED.get(1).url(), is("https://eyes.example/app/test-results/eb-b1"));
+        assertThat(TokenJobStatuses.POSTED.get(2).url(), is("https://eyes.example/app/test-results/eb-b1"));
         assertThat(CHECKS.getPublishedChecks(), empty());
     }
 
     @Test
     void changesAndWaitingForADesignerArePending() throws Exception {
         eyes.results("b1", List.of(new FakeTest("s1", "unresolved")));
-        run("applitools(batchId: 'b1', designReview: true) { echo 'tests' }", Result.UNSTABLE);
+        run("applitools(batchId: 'b1', designReview: true) { echo 'tests' }", Result.SUCCESS);
 
         assertThat(posted(), contains(
                 "Applitools / Visual tests = PENDING | Running visual tests",
+                "Applitools / Design review = PENDING | Waiting for visual tests",
                 "Applitools / Visual tests = PENDING | 1 visual change to review",
                 "Applitools / Design review = PENDING | Waiting for design review"));
     }
@@ -124,7 +126,7 @@ public class CommitStatusFallbackTest {
         eyes.results("b1", List.of(new FakeTest("s1", "failed")));
         run("applitools(batchId: 'b1') { echo 'tests' }", Result.FAILURE);
 
-        assertThat(posted().get(1), is("Applitools / Visual tests = FAILURE | 1 of 1 failed"));
+        assertThat(posted().get(2), is("Applitools / Visual tests = FAILURE | 1 of 1 failed"));
     }
 
     @Test

@@ -12,7 +12,7 @@ Every pull request then gets two checks: **Applitools / Visual tests** and **App
 
 - **Works with any Eyes SDK** (Playwright, Storybook, Cypress, Selenium…): the plugin passes batch, branch and key to the SDK through `APPLITOOLS_*` environment variables.
 - **Design review on demand:** add the `design-review` label to a PR, and a designer has to approve its visual changes. Optionally, only listed designers count.
-- **Results in Jenkins too:** a summary on the build page, `applitoolsResults()` for your own logic, and yellow (unstable) builds for changes awaiting review.
+- **Results in Jenkins too:** a summary on the build page and `applitoolsResults()` for your own logic. Changes awaiting review keep the build green; the Applitools PR results are the gate.
 
 **→ [Setup guide](docs/SETUP.md)** (recommended: multibranch + GitHub App, about 30 minutes) · **[Setup without multibranch](docs/SETUP-WITHOUT-MULTIBRANCH.md)** (any job type, just a token) · **[Resource usage and limits](docs/OPERATIONS.md)**
 

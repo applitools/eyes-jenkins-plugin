@@ -72,7 +72,7 @@ The Design review check is **always posted** once the feature is on, even when i
 | Review link on the PR | The check's Details link opens the Eyes batch; optional summary comment | 3 |
 | Accepted baselines merge on PR merge | Merge the Eyes branch baseline when the PR merges | 5 |
 | `--auto-accept-changes main` | `autoAcceptOn: 'main'` | 5 |
-| `--exit-zero-on-changes` | `onChanges: 'UNSTABLE' \| 'FAILURE' \| 'SUCCESS'` | 2 |
+| `--exit-zero-on-changes` | Default: changes keep the build green; `onChanges: 'UNSTABLE' \| 'FAILURE'` to change that | 2 |
 | `--exit-once-uploaded` | `waitForResults: false` | 2 |
 | Build history in the web app | Build page summary, per-job trend | 2 |
 | TurboSnap / only changed stories | Out of scope (Eyes runs what the tests run) | — |

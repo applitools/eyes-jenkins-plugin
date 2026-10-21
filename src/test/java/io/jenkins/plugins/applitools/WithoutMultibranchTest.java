@@ -110,9 +110,10 @@ public class WithoutMultibranchTest {
         j.assertLogContains("Reporting to GitHub acme/web PR #7 with credential 'gh-token'", r);
         assertThat(github.posted(), contains(
                 "Applitools / Visual tests = pending | Running visual tests",
+                "Applitools / Design review = pending | Waiting for visual tests",
                 "Applitools / Visual tests = success | 1 passed",
                 "Applitools / Design review = success | Not requested"));
-        FakeGitHubServer.Status first = github.statuses.get(1);
+        FakeGitHubServer.Status first = github.statuses.get(2);
         assertThat(first.sha(), is(SHA));
         assertThat(first.repo(), is("acme/web"));
         assertThat(first.url(), is("https://eyes.example/app/test-results/eb-" + SHA));
@@ -123,7 +124,7 @@ public class WithoutMultibranchTest {
     void labelPresentAtBuildTimeRequiresReview() throws Exception {
         github.labels.add("design-review");
         eyes.results(SHA, List.of(new FakeTest("s1", "unresolved")));
-        run(step("", "echo 'tests'"), Result.UNSTABLE);
+        run(step("", "echo 'tests'"), Result.SUCCESS);
 
         assertThat(github.posted(), hasItem("Applitools / Design review = pending | Waiting for design review"));
     }
@@ -131,7 +132,7 @@ public class WithoutMultibranchTest {
     @Test
     void labelAddedLaterIsFoundByPolling() throws Exception {
         eyes.results(SHA, List.of(new FakeTest("s1", "unresolved")));
-        run(step("", "echo 'tests'"), Result.UNSTABLE);
+        run(step("", "echo 'tests'"), Result.SUCCESS);
         assertThat(github.posted(), hasItem("Applitools / Design review = success | Not requested"));
 
         github.labels.add("design-review");
@@ -144,7 +145,7 @@ public class WithoutMultibranchTest {
     @Test
     void unchangedPullRequestsCostA304() throws Exception {
         eyes.results(SHA, List.of(new FakeTest("s1", "unresolved")));
-        run(step("", "echo 'tests'"), Result.UNSTABLE);
+        run(step("", "echo 'tests'"), Result.SUCCESS);
 
         watcherTick(); // first read: full PR, ETag remembered
         watcherTick(); // unchanged: 304
@@ -156,7 +157,7 @@ public class WithoutMultibranchTest {
     @Test
     void mergeIsFoundByPollingAndMergesBaselines() throws Exception {
         eyes.results(SHA, List.of(new FakeTest("s1", "unresolved")));
-        run(step("", "echo 'tests'"), Result.UNSTABLE);
+        run(step("", "echo 'tests'"), Result.SUCCESS);
 
         github.state = "closed";
         github.merged = true;
@@ -170,7 +171,7 @@ public class WithoutMultibranchTest {
     @Test
     void closedWithoutMergeJustStopsFollowing() throws Exception {
         eyes.results(SHA, List.of(new FakeTest("s1", "unresolved")));
-        run(step("", "echo 'tests'"), Result.UNSTABLE);
+        run(step("", "echo 'tests'"), Result.SUCCESS);
 
         github.state = "closed";
         watcherTick();

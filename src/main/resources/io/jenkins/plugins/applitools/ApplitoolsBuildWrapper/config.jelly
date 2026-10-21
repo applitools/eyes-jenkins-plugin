@@ -16,6 +16,9 @@
     <f:checkbox title="Post the &quot;Applitools / Visual tests&quot; check on the commit" default="true" />
   </f:entry>
   <f:advanced>
+    <f:entry title="Merge Eyes baselines when the PR merges" field="mergeBaselines">
+      <f:select />
+    </f:entry>
     <f:entry field="judgeDiffs">
       <f:checkbox title="Tell SDKs not to fail the test command on visual differences (the plugin judges them)" default="true" />
     </f:entry>

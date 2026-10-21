@@ -109,7 +109,7 @@ public class ReviewFlowTest {
     @Test
     void acceptingInEyesTurnsBothChecksGreen() throws Exception {
         eyes.results("b1", List.of(new FakeTest("s1", "unresolved"), new FakeTest("s2", "passed")));
-        WorkflowRun build = run("applitools(batchId: 'b1', designReview: true) { echo 'tests' }", Result.UNSTABLE);
+        WorkflowRun build = run("applitools(batchId: 'b1', designReview: true) { echo 'tests' }", Result.SUCCESS);
 
         assertThat(latest(VisualTestsCheck.NAME).getConclusion(), is(ChecksConclusion.ACTION_REQUIRED));
         assertThat(latest(DesignReview.CHECK_NAME).getConclusion(), is(ChecksConclusion.ACTION_REQUIRED));
@@ -132,7 +132,7 @@ public class ReviewFlowTest {
     void onlyDesignersCanApprove() throws Exception {
         eyes.results("b1", List.of(new FakeTest("s1", "unresolved")));
         run("applitools(batchId: 'b1', designReview: true, designers: 'dana@example.com') { echo 'tests' }",
-                Result.UNSTABLE);
+                Result.SUCCESS);
 
         // A developer accepts their own change.
         eyes.results("b1", List.of(new FakeTest("s1", "passed")));
@@ -156,7 +156,7 @@ public class ReviewFlowTest {
     @Test
     void rejectingRequestsChanges() throws Exception {
         eyes.results("b1", List.of(new FakeTest("s1", "unresolved")));
-        run("applitools(batchId: 'b1', designReview: true) { echo 'tests' }", Result.UNSTABLE);
+        run("applitools(batchId: 'b1', designReview: true) { echo 'tests' }", Result.SUCCESS);
 
         eyes.results("b1", List.of(new FakeTest("s1", "failed")));
         watcherTick();
@@ -170,7 +170,7 @@ public class ReviewFlowTest {
     void environmentVariableRequiresDesignReview() throws Exception {
         eyes.results("b1", List.of(new FakeTest("s1", "unresolved")));
         run("withEnv(['APPLITOOLS_DESIGN_REVIEW=true']) { applitools(batchId: 'b1') { echo 'tests' } }",
-                Result.UNSTABLE);
+                Result.SUCCESS);
 
         assertThat(latest(DesignReview.CHECK_NAME).getConclusion(), is(ChecksConclusion.ACTION_REQUIRED));
     }
@@ -178,7 +178,7 @@ public class ReviewFlowTest {
     @Test
     void addingTheLabelLaterRequiresReviewWithoutRebuilding() throws Exception {
         eyes.results("b1", List.of(new FakeTest("s1", "unresolved")));
-        WorkflowRun build = run("applitools(batchId: 'b1') { echo 'tests' }", Result.UNSTABLE);
+        WorkflowRun build = run("applitools(batchId: 'b1') { echo 'tests' }", Result.SUCCESS);
         assertThat(latest(DesignReview.CHECK_NAME).getConclusion(), is(ChecksConclusion.SKIPPED));
 
         // Pretend this build is PR #7 of acme/web, then deliver a "labeled" webhook.
@@ -197,7 +197,7 @@ public class ReviewFlowTest {
     @Test
     void designReviewFalseIgnoresLabels() throws Exception {
         eyes.results("b1", List.of(new FakeTest("s1", "unresolved")));
-        run("applitools(batchId: 'b1', designReview: false) { echo 'tests' }", Result.UNSTABLE);
+        run("applitools(batchId: 'b1', designReview: false) { echo 'tests' }", Result.SUCCESS);
 
         PendingReview old = review();
         ReviewRegistry.get().register(LabelEventSubscriberTestAccess.asPullRequest(old, "acme/web", "7"));
@@ -219,7 +219,7 @@ public class ReviewFlowTest {
     @Test
     void settledPullRequestIsKeptForLabelChanges() throws Exception {
         eyes.results("b1", List.of(new FakeTest("s1", "unresolved")));
-        run("applitools(batchId: 'b1') { echo 'tests' }", Result.UNSTABLE);
+        run("applitools(batchId: 'b1') { echo 'tests' }", Result.SUCCESS);
         ReviewRegistry.get().register(LabelEventSubscriberTestAccess.asPullRequest(review(), "acme/web", "7"));
 
         eyes.results("b1", List.of(new FakeTest("s1", "passed")));
@@ -234,8 +234,8 @@ public class ReviewFlowTest {
         eyes.results("b1", List.of(new FakeTest("s1", "unresolved")));
         WorkflowJob job = j.createProject(WorkflowJob.class);
         job.setDefinition(new CpsFlowDefinition("applitools(batchId: 'b1') { echo 'tests' }", true));
-        j.assertBuildStatus(Result.UNSTABLE, job.scheduleBuild2(0));
-        j.assertBuildStatus(Result.UNSTABLE, job.scheduleBuild2(0));
+        j.assertBuildStatus(Result.SUCCESS, job.scheduleBuild2(0));
+        j.assertBuildStatus(Result.SUCCESS, job.scheduleBuild2(0));
 
         assertThat(review().getBuildNumber(), is(2));
     }
@@ -245,8 +245,8 @@ public class ReviewFlowTest {
         System.setProperty(ReviewWatcher.class.getName() + ".budgetSeconds", "0");
         try {
             eyes.results("b1", List.of(new FakeTest("s1", "unresolved")));
-            run("applitools(batchId: 'b1') { echo 'tests' }", Result.UNSTABLE);
-            run("applitools(batchId: 'b1') { echo 'tests' }", Result.UNSTABLE); // a second job
+            run("applitools(batchId: 'b1') { echo 'tests' }", Result.SUCCESS);
+            run("applitools(batchId: 'b1') { echo 'tests' }", Result.SUCCESS); // a second job
             assertThat(ReviewRegistry.get().all(), hasSize(2));
             eyes.requests.clear();
 
@@ -260,5 +260,18 @@ public class ReviewFlowTest {
         } finally {
             System.clearProperty(ReviewWatcher.class.getName() + ".budgetSeconds");
         }
+    }
+
+    @Test
+    void rerunResetsDesignReviewWhileTestsRun() throws Exception {
+        eyes.results("b1", List.of(new FakeTest("s1", "passed")));
+        run("applitools(batchId: 'b1', designReview: true) { echo 'tests' }", Result.SUCCESS);
+
+        List<ChecksDetails> design = PUBLISHER.getPublishedChecks().stream()
+                .filter(c -> c.getName().orElse("").equals(DesignReview.CHECK_NAME))
+                .toList();
+        assertThat(design.get(0).getStatus(), is(ChecksStatus.IN_PROGRESS));
+        assertThat(design.get(0).getOutput().orElseThrow().getTitle().orElseThrow(), is("Waiting for visual tests"));
+        assertThat(design.get(design.size() - 1).getConclusion(), is(ChecksConclusion.SUCCESS));
     }
 }

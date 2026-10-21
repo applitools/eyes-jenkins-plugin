@@ -35,6 +35,8 @@ public class PendingReview {
     private transient int failures;
 
     private boolean labelPresent;
+    /** From the Jenkinsfile; {@code null} means the global setting decides. */
+    private Boolean mergeBaselines;
     /** The PR closed (merged); kept only until its baseline merge succeeds. */
     private boolean closed;
     /** Set for jobs that report with a token (not multibranch): the watcher polls the PR instead of webhooks. */
@@ -283,6 +285,17 @@ public class PendingReview {
     public void pullPolled(long when, boolean ok) {
         lastPullPolledAt = when;
         pullFailures = ok ? 0 : pullFailures + 1;
+    }
+
+    public void setMergeBaselines(Boolean mergeBaselines) {
+        this.mergeBaselines = mergeBaselines;
+    }
+
+    /** Whether to merge Eyes baselines when this PR merges: the job's setting, else the global one. */
+    public boolean isMergeBaselinesOnPrMerge() {
+        return mergeBaselines != null
+                ? mergeBaselines
+                : io.jenkins.plugins.applitools.ApplitoolsGlobalConfiguration.get().isMergeBaselines();
     }
 
     public boolean isClosed() {

@@ -6,7 +6,6 @@ import hudson.model.Run;
 import hudson.model.TaskListener;
 import hudson.security.ACL;
 import hudson.security.ACLContext;
-import io.jenkins.plugins.applitools.ApplitoolsGlobalConfiguration;
 import io.jenkins.plugins.applitools.BaselineMerge;
 import io.jenkins.plugins.applitools.ReviewEvaluator;
 import java.util.ArrayList;
@@ -106,8 +105,7 @@ public final class ReviewEvents {
         List<Future<?>> work = new ArrayList<>();
         ReviewRegistry registry = ReviewRegistry.get();
         for (PendingReview review : registry.forPullRequest(repoSlug, number)) {
-            if (!merged || headRef == null || baseRef == null
-                    || !ApplitoolsGlobalConfiguration.get().isMergeBaselines()) {
+            if (!merged || headRef == null || baseRef == null || !review.isMergeBaselinesOnPrMerge()) {
                 registry.remove(review);
                 continue;
             }

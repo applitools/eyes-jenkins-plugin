@@ -83,7 +83,7 @@ public class ApplitoolsBuildWrapper extends SimpleBuildWrapper {
     private boolean closeBatch = true;
     private boolean waitForResults = true;
     private int resultsTimeout = DEFAULT_RESULTS_TIMEOUT;
-    private ChangesPolicy onChanges = ChangesPolicy.UNSTABLE;
+    private ChangesPolicy onChanges = ChangesPolicy.SUCCESS;
     /** {@code null} (jobs saved before this option existed) means true. */
     private Boolean checks;
     // For jobs that aren't multibranch: where the PR is, and a token to report to GitHub with.
@@ -94,6 +94,8 @@ public class ApplitoolsBuildWrapper extends SimpleBuildWrapper {
     private String targetBranch;
     private String githubCredentialsId;
     private String githubApiUrl;
+    /** {@code null}: the global setting decides. */
+    private Boolean mergeBaselines;
     /** {@code null} (jobs saved before this option existed) means true. */
     private Boolean judgeDiffs;
     private Integer expectTests;
@@ -215,7 +217,7 @@ public class ApplitoolsBuildWrapper extends SimpleBuildWrapper {
 
     @DataBoundSetter
     public void setOnChanges(ChangesPolicy onChanges) {
-        this.onChanges = onChanges != null ? onChanges : ChangesPolicy.UNSTABLE;
+        this.onChanges = onChanges != null ? onChanges : ChangesPolicy.SUCCESS;
     }
 
     public boolean isChecks() {
@@ -308,6 +310,20 @@ public class ApplitoolsBuildWrapper extends SimpleBuildWrapper {
         this.githubApiUrl = Util.fixEmptyAndTrim(githubApiUrl);
     }
 
+    @CheckForNull
+    public Boolean getMergeBaselines() {
+        return mergeBaselines;
+    }
+
+    /**
+     * When this job's PR merges, merge its Eyes baselines into the target branch's ({@code true}), or don't
+     * ({@code false}). Unset: the global setting. Merging only ever happens when the PR merges.
+     */
+    @DataBoundSetter
+    public void setMergeBaselines(Boolean mergeBaselines) {
+        this.mergeBaselines = mergeBaselines;
+    }
+
     public boolean isJudgeDiffs() {
         return judgeDiffs == null || judgeDiffs;
     }
@@ -386,7 +402,7 @@ public class ApplitoolsBuildWrapper extends SimpleBuildWrapper {
             resultsTimeout = DEFAULT_RESULTS_TIMEOUT;
         }
         if (onChanges == null) {
-            onChanges = ChangesPolicy.UNSTABLE;
+            onChanges = ChangesPolicy.SUCCESS;
         }
         return this;
     }
@@ -479,6 +495,9 @@ public class ApplitoolsBuildWrapper extends SimpleBuildWrapper {
         }
 
         DesignSettings design = isChecks() ? designSettings(build, scm, initialEnvironment, log) : null;
+        if (design != null) {
+            DesignReview.started(build, listener); // clear the previous build's verdict right away
+        }
         String explicitReadId = readCredentialsId != null
                 ? readCredentialsId
                 : ApplitoolsGlobalConfiguration.get().getReadCredentialsId();
@@ -494,7 +513,8 @@ public class ApplitoolsBuildWrapper extends SimpleBuildWrapper {
                 onChanges,
                 isChecks(),
                 design,
-                expectations()));
+                expectations(),
+                mergeBaselines));
     }
 
     @Override
@@ -604,6 +624,8 @@ public class ApplitoolsBuildWrapper extends SimpleBuildWrapper {
         @CheckForNull
         private final DesignSettings design;
         private final Expectations expectations;
+        @CheckForNull
+        private final Boolean mergeBaselinesSetting;
 
         /** Results, or why there are none (for the check's summary). */
         private record Collected(@CheckForNull BatchResults results, @CheckForNull String problem) {}
@@ -620,7 +642,8 @@ public class ApplitoolsBuildWrapper extends SimpleBuildWrapper {
                 ChangesPolicy onChanges,
                 boolean checks,
                 @CheckForNull DesignSettings design,
-                Expectations expectations) {
+                Expectations expectations,
+                @CheckForNull Boolean mergeBaselinesSetting) {
             this.serverUrl = serverUrl;
             this.credentialsId = credentialsId;
             this.readCredentialsId = readCredentialsId;
@@ -633,6 +656,7 @@ public class ApplitoolsBuildWrapper extends SimpleBuildWrapper {
             this.checks = checks;
             this.design = design;
             this.expectations = expectations;
+            this.mergeBaselinesSetting = mergeBaselinesSetting;
         }
 
         @Override
@@ -725,6 +749,7 @@ public class ApplitoolsBuildWrapper extends SimpleBuildWrapper {
                     changed,
                     labelPresent);
             review.setExpectations(expectations);
+            review.setMergeBaselines(mergeBaselinesSetting);
             GitHubConnectionAction github = build.getAction(GitHubConnectionAction.class);
             if (github != null) {
                 review.setGitHubConnection(github.getApiUrl(), github.getCredentialsId());
@@ -849,6 +874,14 @@ public class ApplitoolsBuildWrapper extends SimpleBuildWrapper {
             return true;
         }
 
+        public ListBoxModel doFillMergeBaselinesItems() {
+            ListBoxModel items = new ListBoxModel();
+            items.add("Global setting", "");
+            items.add("Yes", "true");
+            items.add("No", "false");
+            return items;
+        }
+
         public ListBoxModel doFillDesignReviewItems() {
             ListBoxModel items = new ListBoxModel();
             items.add("From PR label / global default", "");
@@ -862,11 +895,14 @@ public class ApplitoolsBuildWrapper extends SimpleBuildWrapper {
         public ApplitoolsBuildWrapper newInstance(StaplerRequest2 req, @NonNull JSONObject formData)
                 throws FormException {
             String mode = formData.optString("designReview", "");
+            String merge = formData.optString("mergeBaselines", "");
             // Jenkins may call this more than once with the same object, so don't modify it.
             JSONObject rest = JSONObject.fromObject(formData);
             rest.remove("designReview");
+            rest.remove("mergeBaselines");
             ApplitoolsBuildWrapper wrapper = (ApplitoolsBuildWrapper) super.newInstance(req, rest);
             wrapper.setDesignReview(mode.isEmpty() ? null : Boolean.valueOf(mode));
+            wrapper.setMergeBaselines(merge.isEmpty() ? null : Boolean.valueOf(merge));
             return wrapper;
         }
 

@@ -1,5 +1,6 @@
 <div>
-  What unreviewed visual changes do to the Jenkins build: <code>UNSTABLE</code> (default) marks it yellow,
-  <code>FAILURE</code> fails it, <code>SUCCESS</code> leaves it alone. Rejected or aborted tests always fail the build.
-  <p>Tip: set <code>failTestsOnDiff: false</code> in your Eyes SDK config so the plugin, not the test runner, decides.</p>
+  What visual changes awaiting review do to the Jenkins build: <code>SUCCESS</code> (default) leaves it green, since the
+  Applitools PR results are the gate and the run itself worked. <code>UNSTABLE</code> marks it yellow (Jenkins' own PR
+  results then show as failing), <code>FAILURE</code> fails it. Rejected or aborted tests and missing results always fail
+  the build.
 </div>

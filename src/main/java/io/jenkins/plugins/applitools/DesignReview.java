@@ -109,6 +109,22 @@ final class DesignReview {
                 "Every visual change was accepted by a designer.");
     }
 
+    /**
+     * At the start of every build: the previous build's verdict no longer applies, so show the review as pending
+     * until this build's results are in (a new check run per build, so in progress is allowed here).
+     */
+    static void started(@NonNull Run<?, ?> run, @NonNull TaskListener listener) {
+        VisualTestsCheck.publish(run, listener, new ChecksDetails.ChecksDetailsBuilder()
+                .withName(CHECK_NAME)
+                .withStatus(ChecksStatus.IN_PROGRESS)
+                .withStartedAt(VisualTestsCheck.now())
+                .withOutput(new ChecksOutput.ChecksOutputBuilder()
+                        .withTitle("Waiting for visual tests")
+                        .withSummary("Design review is decided once this build's visual tests have run.")
+                        .build())
+                .build());
+    }
+
     static void publish(
             @NonNull Run<?, ?> run, @NonNull TaskListener listener, @NonNull Verdict verdict, String batchUrl) {
         ChecksDetails.ChecksDetailsBuilder details = new ChecksDetails.ChecksDetailsBuilder().withName(CHECK_NAME);
