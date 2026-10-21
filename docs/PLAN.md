@@ -138,6 +138,19 @@ Some teams can't use multibranch pipelines (repo or pipeline-format restrictions
 
 Effort: contained. One resolver, a few step options, and a status publisher that takes explicit credentials. Add a setup-guide section and setup-page rows for these jobs.
 
+### Configurable watcher timing (asked 2026-10-21)
+
+Let teams choose how quickly checks follow reviews in Eyes. Keep today's default and its slowing schedule (1 min for the first hour, 5 min for the first day, then 30 min), but make the **base interval** configurable:
+
+- **Globally:** a default in Manage Jenkins → System → Applitools Eyes (also in JCasC).
+- **Per pipeline:** a step option, e.g. `applitools(pollSeconds: 15) { … }`, stored with the review so it applies after the build ends.
+- **Minimum 15 seconds.** The later steps scale from the base, as now (×5 after an hour, ×30 after a day, error backoff capped at ×60).
+
+Notes for building it:
+- The watcher pass itself runs every 60 s (`ReviewWatcher` period), so intervals under a minute need the pass to run more often: e.g. every 15 s, or the smallest configured interval. Polling only what's due keeps that cheap.
+- Cost scales inversely: 15 s is 4× the Eyes and GitHub calls of the 1-minute default for a review's first hour. Update OPERATIONS.md with the numbers, and show the effective interval on the setup page.
+- Today's system property (`PendingReview.minPollSeconds`) becomes the fallback below these settings.
+
 ### A GitHub Actions version of the same concept (asked 2026-10-21)
 
 Investigate and build an Action (e.g. `applitools/visual-review-action`) that gives Actions users the same flow: Visual tests and Design review checks, Eyes-team designers, `expectApps`, baseline merge on PR merge.
