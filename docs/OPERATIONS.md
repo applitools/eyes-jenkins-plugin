@@ -75,6 +75,8 @@ For a 100-test batch, multiply by 10: about 4 MB per PR reviewed within a day.
 - **Steady state** (all older than a day): 500 × 2 polls/h = **1,000 requests/h** (one every 3.6 s), **≈ 1.2 MB/h**, with about 3 s of request time per minute-long pass.
 - **Burst** (all 500 started in the same hour): 500 due every minute × 0.2 s = 100 s of work, but the 50 s budget caps a pass at about 250 polls. Each build is then polled about every 2 minutes: **≈ 18 MB in that hour**, falling to the steady state as the builds age.
 
+**Designers from an Eyes team** add two small calls (key validation, then the team list: ~0.5 KB gzipped), at most once every 10 minutes per key, and only while a review is checking who approved.
+
 **Designers-only approval** adds one 3.3 KB session read per changed test, but only once all changes are accepted and the plugin is checking *who* accepted them. Typically a few polls.
 
 ## Memory: calculated

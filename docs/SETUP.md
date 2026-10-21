@@ -88,7 +88,7 @@ Delete the `.pem` files once the GitHub App credential tests OK.
 - **GitHub → Advanced → Shared secrets → Add →** `github-webhook-secret`. Jenkins then rejects webhooks that aren't signed by your App. Don't add a GitHub Server entry; the App manages its own webhook.
 - **Applitools Eyes:**
   - **Eyes server URL:** leave the default unless you use a dedicated or on-prem Eyes.
-  - **Designers:** Eyes login emails of the people who may approve design reviews. Leave empty to let any reviewer approve.
+  - **Designers:** who may approve design reviews. Use an **Eyes team**, `team:Design`, and manage membership in Eyes (Admin → Teams), where designers already review. You can also list Eyes login emails, or mix both: `team:Design, lead@example.com`. Leave empty to let any reviewer approve.
   - **Design review label:** defaults to `design-review`.
   - **Merge a pull request's Eyes baselines into its target branch when it merges:** on by default.
 
@@ -201,7 +201,7 @@ Don't require `Applitools / Baseline merge`: it only appears after a pull reques
 2. **Make a visual change** and push. Visual tests turns ⚠️ *action required*, and the build turns yellow (unstable).
 3. **Add the `design-review` label** to the PR. Design review turns ⚠️ *waiting for design review* right away.
 4. **Click Details** on either check. It opens the batch in Eyes. Accept the changes and **save**.
-5. Within a minute, both checks turn ✅. With a designers list, Design review reads *Approved by …*, and only a designer's approval counts.
+5. Within a minute, both checks turn ✅. With designers set, Design review reads *Approved by …*, and only a designer's approval counts: someone in the Eyes team, or listed by email.
 
 Rejecting a change in Eyes turns both checks ❌.
 
@@ -221,7 +221,7 @@ All are optional.
 | `onChanges` | `'UNSTABLE'` | Build result when there are changes to review: `'UNSTABLE'`, `'FAILURE'` or `'SUCCESS'` |
 | `designReview` | from label / env / global | `true` or `false` to require or skip design review |
 | `designReviewLabel` | `design-review` | PR label that requests design review |
-| `designers` | global setting | Comma-separated Eyes emails who may approve |
+| `designers` | global setting | Who may approve: `team:<Eyes team>` and/or Eyes login emails, comma-separated |
 | `checks` | `true` | Post the PR checks |
 | `expectTests` | none | Minimum number of Eyes tests; fewer fails Visual tests and the build |
 | `expectApps` | none | Eyes app names that must each report at least one test, e.g. `['Web', 'Storybook']` |
@@ -271,7 +271,8 @@ Branch names follow Eyes' `owner/repo/branch` convention, so baselines line up w
 | Storybook stories missing from the Eyes batch | `eyes-storybook` failed before testing. Its step now fails the build (the plugin uses `nodiffs`, not `false`); look for errors right after "Storybook was started". Use `expectApps` to catch it in the PR check too. |
 | **Baseline merge: "Eyes refused the baseline merge"** | Only **merge** keys can merge baselines (run, read and write keys get HTTP 403). Add one as `applitools-merge-api-key`, then retry: **GitHub App → Advanced → Recent Deliveries**, find the PR's `pull_request` (`closed`) delivery, click **Redeliver**. |
 | **Baseline merge: "N baseline conflicts"** | The same checkpoints also changed on the target branch. Resolve them in Eyes under **Compare & merge branches**. |
-| Design review stays waiting after a designer accepted | The changes must be **saved** in Eyes, and the accepting user's email must be in **Designers**. |
+| Design review stays waiting after a designer accepted | The changes must be **saved** in Eyes, and the accepting user must be in a designers team (or listed by email). **Manage Jenkins → Applitools setup** shows exactly who counts. |
+| **Design review: "Designers couldn't be determined"** | An Eyes team in Designers wasn't found (check the spelling against Eyes → Admin → Teams), or the read key can't list teams. Nobody can approve until it's fixed. |
 
 ## Using a personal access token instead of a GitHub App
 
