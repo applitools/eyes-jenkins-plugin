@@ -422,7 +422,11 @@ public class ApplitoolsBuildWrapper extends SimpleBuildWrapper {
                         expand(initialEnvironment, branch),
                         expand(initialEnvironment, targetBranch));
         if (githubCredentialsId != null) {
-            if (scm.repoSlug() == null || scm.commitSha() == null) {
+            if (io.jenkins.plugins.applitools.scm.GitHubRestClient.token(build, githubCredentialsId) == null) {
+                log.println(LOG_PREFIX + "WARNING: githubCredentialsId '" + githubCredentialsId + "' doesn't match a"
+                        + " Secret text or Username with password credential visible to this job. Results won't be"
+                        + " posted to GitHub.");
+            } else if (scm.repoSlug() == null || scm.commitSha() == null) {
                 log.println(LOG_PREFIX + "WARNING: githubCredentialsId is set, but the repository or commit is unknown;"
                         + " set repo: and commit: on the step. Results won't be posted to GitHub.");
             } else {

@@ -194,6 +194,29 @@ public class WithoutMultibranchTest {
     }
 
     @Test
+    void unknownCredentialWarnsOnce() throws Exception {
+        eyes.results(SHA, List.of(new FakeTest("s1", "passed")));
+        WorkflowRun r = run(step("", "echo 'tests'").replace("'gh-token'", "'not-a-credential'"), Result.SUCCESS);
+
+        j.assertLogContains("githubCredentialsId 'not-a-credential' doesn't match a Secret text or Username with"
+                + " password credential", r);
+        j.assertLogNotContains("could not publish", r); // one clear warning, not one per status
+        assertThat(github.statuses, empty());
+    }
+
+    @Test
+    void usernamePasswordCredentialWorks() throws Exception {
+        SystemCredentialsProvider.getInstance()
+                .getCredentials()
+                .add(new com.cloudbees.plugins.credentials.impl.UsernamePasswordCredentialsImpl(
+                        CredentialsScope.GLOBAL, "gh-userpass", "", "octocat", github.token));
+        eyes.results(SHA, List.of(new FakeTest("s1", "passed")));
+        run(step("", "echo 'tests'").replace("'gh-token'", "'gh-userpass'"), Result.SUCCESS);
+
+        assertThat(github.posted(), hasItem("Applitools / Visual tests = success | 1 passed"));
+    }
+
+    @Test
     void missingRepoOrCommitWarns() throws Exception {
         WorkflowRun r = run("applitools(batchId: 'b1', githubCredentialsId: 'gh-token') { echo 'tests' }",
                 Result.SUCCESS);
