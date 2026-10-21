@@ -23,6 +23,7 @@ import hudson.util.ListBoxModel;
 import hudson.util.Secret;
 import io.jenkins.plugins.applitools.review.PendingReview;
 import io.jenkins.plugins.applitools.review.ReviewRegistry;
+import io.jenkins.plugins.applitools.scm.GitHubConnectionAction;
 import io.jenkins.plugins.applitools.scm.PullRequestLabels;
 import io.jenkins.plugins.applitools.scm.ScmInfo;
 import io.jenkins.plugins.applitools.scm.ScmInfoResolver;
@@ -85,6 +86,14 @@ public class ApplitoolsBuildWrapper extends SimpleBuildWrapper {
     private ChangesPolicy onChanges = ChangesPolicy.UNSTABLE;
     /** {@code null} (jobs saved before this option existed) means true. */
     private Boolean checks;
+    // For jobs that aren't multibranch: where the PR is, and a token to report to GitHub with.
+    private String repo;
+    private String pullRequest;
+    private String commit;
+    private String branch;
+    private String targetBranch;
+    private String githubCredentialsId;
+    private String githubApiUrl;
     /** {@code null} (jobs saved before this option existed) means true. */
     private Boolean judgeDiffs;
     private Integer expectTests;
@@ -219,6 +228,86 @@ public class ApplitoolsBuildWrapper extends SimpleBuildWrapper {
         this.checks = checks;
     }
 
+    @CheckForNull
+    public String getRepo() {
+        return repo;
+    }
+
+    /** {@code owner/repo}; overrides detection (for jobs that aren't multibranch). */
+    @DataBoundSetter
+    public void setRepo(String repo) {
+        this.repo = Util.fixEmptyAndTrim(repo);
+    }
+
+    @CheckForNull
+    public String getPullRequest() {
+        return pullRequest;
+    }
+
+    /** PR number; overrides detection. */
+    @DataBoundSetter
+    public void setPullRequest(String pullRequest) {
+        this.pullRequest = Util.fixEmptyAndTrim(pullRequest);
+    }
+
+    @CheckForNull
+    public String getCommit() {
+        return commit;
+    }
+
+    /** The commit being tested (for a PR, its head commit); overrides detection. */
+    @DataBoundSetter
+    public void setCommit(String commit) {
+        this.commit = Util.fixEmptyAndTrim(commit);
+    }
+
+    @CheckForNull
+    public String getBranch() {
+        return branch;
+    }
+
+    /** Branch under test (for a PR, its source branch); overrides detection. */
+    @DataBoundSetter
+    public void setBranch(String branch) {
+        this.branch = Util.fixEmptyAndTrim(branch);
+    }
+
+    @CheckForNull
+    public String getTargetBranch() {
+        return targetBranch;
+    }
+
+    /** PR target branch; overrides detection. */
+    @DataBoundSetter
+    public void setTargetBranch(String targetBranch) {
+        this.targetBranch = Util.fixEmptyAndTrim(targetBranch);
+    }
+
+    @CheckForNull
+    public String getGithubCredentialsId() {
+        return githubCredentialsId;
+    }
+
+    /**
+     * A token (Secret text, or username/password with the token as password) to post commit statuses and read the PR
+     * with, for jobs that aren't multibranch. Needs no GitHub plugins.
+     */
+    @DataBoundSetter
+    public void setGithubCredentialsId(String githubCredentialsId) {
+        this.githubCredentialsId = Util.fixEmptyAndTrim(githubCredentialsId);
+    }
+
+    @CheckForNull
+    public String getGithubApiUrl() {
+        return githubApiUrl;
+    }
+
+    /** GitHub Enterprise API URL, e.g. https://github.example.com/api/v3; defaults to api.github.com. */
+    @DataBoundSetter
+    public void setGithubApiUrl(String githubApiUrl) {
+        this.githubApiUrl = Util.fixEmptyAndTrim(githubApiUrl);
+    }
+
     public boolean isJudgeDiffs() {
         return judgeDiffs == null || judgeDiffs;
     }
@@ -325,7 +414,29 @@ public class ApplitoolsBuildWrapper extends SimpleBuildWrapper {
                     + " credentialsId on the applitools step.");
         }
 
-        ScmInfo scm = ScmInfoResolver.resolveFor(build, initialEnvironment);
+        ScmInfo scm = ScmInfoResolver.resolveFor(build, initialEnvironment)
+                .withOverrides(
+                        expand(initialEnvironment, repo),
+                        expand(initialEnvironment, pullRequest),
+                        expand(initialEnvironment, commit),
+                        expand(initialEnvironment, branch),
+                        expand(initialEnvironment, targetBranch));
+        if (githubCredentialsId != null) {
+            if (scm.repoSlug() == null || scm.commitSha() == null) {
+                log.println(LOG_PREFIX + "WARNING: githubCredentialsId is set, but the repository or commit is unknown;"
+                        + " set repo: and commit: on the step. Results won't be posted to GitHub.");
+            } else {
+                build.addOrReplaceAction(new GitHubConnectionAction(
+                        expand(initialEnvironment, githubApiUrl),
+                        githubCredentialsId,
+                        scm.repoSlug(),
+                        scm.commitSha(),
+                        scm.changeId()));
+                log.println(LOG_PREFIX + "Reporting to GitHub " + scm.repoSlug()
+                        + (scm.isPullRequest() ? " PR #" + scm.changeId() : "") + " with credential '"
+                        + githubCredentialsId + "'");
+            }
+        }
         BatchSettings batch = BatchSettings.compute(
                 scm,
                 build.getParent().getFullName(),
@@ -610,6 +721,10 @@ public class ApplitoolsBuildWrapper extends SimpleBuildWrapper {
                     changed,
                     labelPresent);
             review.setExpectations(expectations);
+            GitHubConnectionAction github = build.getAction(GitHubConnectionAction.class);
+            if (github != null) {
+                review.setGitHubConnection(github.getApiUrl(), github.getCredentialsId());
+            }
             review.setLastVisualState(ReviewEvaluator.visualState(results));
             try {
                 ReviewEvaluator.refreshDesign(review, build, listener, results, reader(build, null, log));

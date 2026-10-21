@@ -306,6 +306,11 @@ public class EyesClient {
      * watcher's load. Rebuilt only when Jenkins' proxy settings change; the old one is left to finish in-flight
      * requests and be collected.
      */
+    /** The shared client, for other REST calls the plugin makes (e.g. to GitHub). */
+    public static HttpClient sharedHttpClient() {
+        return client();
+    }
+
     static synchronized HttpClient client() {
         jenkins.model.Jenkins instance = jenkins.model.Jenkins.getInstanceOrNull();
         ProxyConfiguration proxy = instance != null ? instance.getProxy() : null;

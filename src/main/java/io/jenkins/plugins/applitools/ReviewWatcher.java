@@ -8,7 +8,9 @@ import hudson.model.TaskListener;
 import hudson.security.ACL;
 import hudson.security.ACLContext;
 import io.jenkins.plugins.applitools.review.PendingReview;
+import io.jenkins.plugins.applitools.review.ReviewEvents;
 import io.jenkins.plugins.applitools.review.ReviewRegistry;
+import io.jenkins.plugins.applitools.scm.GitHubRestClient;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
@@ -52,6 +54,14 @@ public class ReviewWatcher extends AsyncPeriodicWork {
                     continue;
                 }
                 long now = System.currentTimeMillis();
+                if (review.needsPullPolling() && now >= review.nextPullPollAt(now)) {
+                    if (now - start > budgetMillis()) {
+                        break;
+                    }
+                    if (pollPullRequest(review, listener)) {
+                        continue; // the PR closed: ReviewEvents took over (merge, then stop following)
+                    }
+                }
                 if (review.isSettled() || now < review.nextPollAt(now)) {
                     continue; // settled open PR (kept for labels and its merge), or not due yet
                 }
@@ -81,6 +91,41 @@ public class ReviewWatcher extends AsyncPeriodicWork {
                 registry.saveQuietly();
             }
         }
+    }
+
+    /**
+     * For PRs reported with a token (no webhooks): read the PR from GitHub and apply what changed, exactly as the
+     * webhooks would. Returns true if the PR has closed.
+     */
+    private static boolean pollPullRequest(PendingReview review, TaskListener listener) {
+        long now = System.currentTimeMillis();
+        String slug = review.getRepoSlug();
+        String number = review.getChangeId();
+        String credentialsId = review.getGithubCredentialsId();
+        Run<?, ?> run = findRun(review);
+        String token = run != null && credentialsId != null ? GitHubRestClient.token(run, credentialsId) : null;
+        if (slug == null || number == null || token == null) {
+            review.pullPolled(now, false);
+            return false;
+        }
+        try {
+            GitHubRestClient.PullState pr = new GitHubRestClient(review.getGithubApiUrl(), token).pull(slug, number);
+            review.pullPolled(now, true);
+            if (!pr.open()) {
+                ReviewEvents.closed(slug, number, pr.merged(), pr.headRef(), pr.baseRef());
+                return true;
+            }
+            boolean labeled = pr.labels().stream().anyMatch(l -> l.equalsIgnoreCase(review.getLabel()));
+            if (labeled != review.isLabelPresent()) {
+                ReviewEvents.labelChanged(slug, number, review.getLabel(), labeled);
+            }
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        } catch (Exception e) {
+            review.pullPolled(now, false);
+            listener.getLogger().println("Could not read " + slug + "#" + number + ": " + e);
+        }
+        return false;
     }
 
     static Run<?, ?> findRun(PendingReview review) {

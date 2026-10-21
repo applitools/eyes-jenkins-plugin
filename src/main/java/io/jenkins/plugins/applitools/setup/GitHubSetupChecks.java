@@ -71,8 +71,9 @@ public class GitHubSetupChecks extends SetupCheck {
             }
         }
         if (jobs == 0) {
-            items.add(SetupItem.warning("GitHub jobs", "No multibranch jobs with a GitHub source.",
-                    "Create a Multibranch Pipeline with a GitHub branch source (setup guide, step 5)."));
+            items.add(SetupItem.info("GitHub jobs", "No multibranch jobs with a GitHub source. That's the recommended"
+                    + " setup (setup guide, step 5); jobs that aren't multibranch can still report with"
+                    + " githubCredentialsId."));
         }
         return items;
     }

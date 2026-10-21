@@ -37,6 +37,11 @@ public class PendingReview {
     private boolean labelPresent;
     /** The PR closed (merged); kept only until its baseline merge succeeds. */
     private boolean closed;
+    /** Set for jobs that report with a token (not multibranch): the watcher polls the PR instead of webhooks. */
+    private String githubApiUrl;
+    private String githubCredentialsId;
+    private transient long lastPullPolledAt;
+    private transient int pullFailures;
     /** What the batch must contain; re-applied on every refresh so accepting other diffs can't pass the gate. */
     private io.jenkins.plugins.applitools.Expectations expectations;
     private String lastVisualState;
@@ -231,6 +236,42 @@ public class PendingReview {
 
     public void setExpectations(io.jenkins.plugins.applitools.Expectations expectations) {
         this.expectations = expectations;
+    }
+
+    public void setGitHubConnection(String apiUrl, String credentialsId) {
+        this.githubApiUrl = apiUrl;
+        this.githubCredentialsId = credentialsId;
+    }
+
+    @CheckForNull
+    public String getGithubApiUrl() {
+        return githubApiUrl;
+    }
+
+    @CheckForNull
+    public String getGithubCredentialsId() {
+        return githubCredentialsId;
+    }
+
+    /** A PR reported with a token: no webhooks, so its labels and merge are learned by polling GitHub. */
+    public boolean needsPullPolling() {
+        return githubCredentialsId != null && isPullRequest() && !closed;
+    }
+
+    /** Same schedule as Eyes polling (slowing with age, backing off on errors), but for the GitHub PR. */
+    public long nextPullPollAt(long now) {
+        long unit = minPollMillis();
+        long age = now - registeredAt;
+        long interval = age < 3_600_000L ? unit : age < 86_400_000L ? 5 * unit : 30 * unit;
+        if (pullFailures > 0) {
+            interval = Math.min(Math.max(interval, unit) << Math.min(pullFailures, 10), 60 * unit);
+        }
+        return lastPullPolledAt + interval;
+    }
+
+    public void pullPolled(long when, boolean ok) {
+        lastPullPolledAt = when;
+        pullFailures = ok ? 0 : pullFailures + 1;
     }
 
     public boolean isClosed() {

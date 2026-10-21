@@ -110,7 +110,7 @@ class SetupPageTest {
 
     @Test
     void gitHubRowsWithoutJobsOrWebhooks() throws Exception {
-        assertThat(row("GitHub jobs").getStatus(), is(SetupItem.Status.WARNING));
+        assertThat(row("GitHub jobs").getStatus(), is(SetupItem.Status.INFO));
         assertThat(row("Pull request webhooks").getStatus(), is(SetupItem.Status.WARNING));
         assertThat(row("Webhook signatures").getStatus(), is(SetupItem.Status.WARNING));
     }

@@ -28,6 +28,33 @@ public record ScmInfo(
         return changeId != null;
     }
 
+    /**
+     * Applies values given explicitly on the step (e.g. from Generic Webhook Trigger variables), which win over
+     * anything detected. {@code repo} is {@code owner/repo}; nulls keep the detected value.
+     */
+    @edu.umd.cs.findbugs.annotations.NonNull
+    public ScmInfo withOverrides(
+            @CheckForNull String repo,
+            @CheckForNull String pullRequest,
+            @CheckForNull String commit,
+            @CheckForNull String branch,
+            @CheckForNull String targetBranch) {
+        String o = owner;
+        String r = repository;
+        if (repo != null && repo.contains("/")) {
+            o = repo.substring(0, repo.indexOf('/'));
+            r = repo.substring(repo.indexOf('/') + 1);
+        }
+        return new ScmInfo(
+                o,
+                r,
+                branch != null ? branch : this.branch,
+                targetBranch != null ? targetBranch : this.targetBranch,
+                commit != null ? commit : commitSha,
+                pullRequest != null ? pullRequest : changeId,
+                changeTitle);
+    }
+
     /** {@code owner/repo}, or {@code null} when either part is unknown. */
     @CheckForNull
     public String repoSlug() {

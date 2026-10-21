@@ -73,6 +73,7 @@ public class CoreSetupChecks extends SetupCheck {
         items.add(designersRow(config, server, secret(readId) != null ? secret(readId) : runKey));
 
         List<PendingReview> reviews = ReviewRegistry.get().all();
+        items.add(tokenReportingRow(reviews));
         List<String> waiting = reviews.stream()
                 .filter(r -> !r.isSettled())
                 .map(r -> r.getJobFullName() + " #" + r.getBuildNumber())
@@ -123,6 +124,28 @@ public class CoreSetupChecks extends SetupCheck {
             return SetupItem.warning("Designers", "Couldn't read Eyes teams: " + e.getMessage(),
                     "Team lookups use the read key; make sure it's valid.");
         }
+    }
+
+    /** Jobs that aren't multibranch report with githubCredentialsId; show whether GitHub accepts their calls. */
+    private static SetupItem tokenReportingRow(List<PendingReview> reviews) {
+        long tokenReviews = reviews.stream().filter(r -> r.getGithubCredentialsId() != null).count();
+        long lastCall = io.jenkins.plugins.applitools.scm.GitHubRestClient.getLastCallAt();
+        String lastError = io.jenkins.plugins.applitools.scm.GitHubRestClient.getLastError();
+        if (lastCall == 0) {
+            return SetupItem.info("GitHub with a token", tokenReviews == 0
+                    ? "No builds have used githubCredentialsId since Jenkins started (only needed for jobs that"
+                            + " aren't multibranch)."
+                    : "Following " + tokenReviews + " build(s) that report with a token; no GitHub calls yet.");
+        }
+        long minutes = (System.currentTimeMillis() - lastCall) / 60_000L;
+        String when = minutes == 0 ? "less than a minute ago" : minutes + " min ago";
+        if (lastError != null) {
+            return SetupItem.problem("GitHub with a token", "Last call (" + when + ") failed: " + lastError + ".",
+                    "Check the token credential: it needs Commit statuses (write), Pull requests (read) and Contents"
+                            + " (read) on the repository.");
+        }
+        return SetupItem.ok("GitHub with a token", "Last call " + when + " succeeded; following " + tokenReviews
+                + " build(s) that report with a token (PRs are polled for labels and merges).");
     }
 
     private static SetupItem jenkinsUrl() {
