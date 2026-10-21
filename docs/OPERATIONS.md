@@ -79,6 +79,10 @@ For a 100-test batch, multiply by 10: about 4 MB per PR reviewed within a day.
 
 **Designers-only approval** adds one 3.3 KB session read per changed test, but only once all changes are accepted and the plugin is checking *who* accepted them. Typically a few polls.
 
+### Jobs that aren't multibranch (token reporting)
+
+These PRs are also polled on GitHub (same schedule: 1, 5, then 30 minutes), to catch label changes and merges without webhooks. Each poll is a **conditional request**: GitHub answers an unchanged PR with `304 Not Modified`, **no body, and no cost against the token's 5,000 requests/hour** (verified 2026-10-21). Only a PR that actually changed costs a full read (~21 KB; GitHub doesn't compress it). Results are posted as commit statuses: about 4 small POSTs per build, plus one per later state change.
+
 ## Memory: calculated
 
 - **Per followed build:** ~1.2 KB serialized (measured: 3,730 bytes for 3 entries) plus ~60 bytes per changed test ID. That's about **1.5 KB on the heap** with object overhead. **At the cap: ~0.75–1 MB.**

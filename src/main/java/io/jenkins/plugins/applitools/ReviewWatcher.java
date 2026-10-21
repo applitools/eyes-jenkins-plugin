@@ -109,8 +109,13 @@ public class ReviewWatcher extends AsyncPeriodicWork {
             return false;
         }
         try {
-            GitHubRestClient.PullState pr = new GitHubRestClient(review.getGithubApiUrl(), token).pull(slug, number);
+            GitHubRestClient.PullState pr = new GitHubRestClient(review.getGithubApiUrl(), token)
+                    .pullIfChanged(slug, number, review.getPullEtag());
             review.pullPolled(now, true);
+            if (pr == null) {
+                return false; // unchanged since last time (HTTP 304)
+            }
+            review.setPullEtag(pr.etag());
             if (!pr.open()) {
                 ReviewEvents.closed(slug, number, pr.merged(), pr.headRef(), pr.baseRef());
                 return true;

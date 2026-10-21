@@ -28,6 +28,8 @@ final class FakeGitHubServer implements AutoCloseable {
     final List<Status> statuses = new CopyOnWriteArrayList<>();
     final List<String> labels = new CopyOnWriteArrayList<>();
     volatile String token = "gh-token-0123456789";
+    /** Conditional PR reads answered 304 (nothing changed). */
+    final java.util.concurrent.atomic.AtomicInteger notModified = new java.util.concurrent.atomic.AtomicInteger();
     volatile String state = "open";
     volatile boolean merged;
     volatile String headRef = "feature";
@@ -57,6 +59,14 @@ final class FakeGitHubServer implements AutoCloseable {
                     auth));
             respond(exchange, 201, "{}");
         } else if (pull.matches()) {
+            String etag = "\"" + (state + merged + headRef + baseRef + labels).hashCode() + "\"";
+            if (etag.equals(exchange.getRequestHeaders().getFirst("If-None-Match"))) {
+                notModified.incrementAndGet();
+                exchange.sendResponseHeaders(304, -1);
+                exchange.close();
+                return;
+            }
+            exchange.getResponseHeaders().add("ETag", etag);
             JSONObject pr = new JSONObject();
             pr.put("number", Integer.parseInt(pull.group(2)));
             pr.put("state", state);

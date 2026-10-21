@@ -78,12 +78,35 @@ public class GitHubRestClient {
                 .header("Content-Type", "application/json"), "posting status '" + context + "'");
     }
 
-    /** A pull request's state, as far as the review gate cares. */
-    public record PullState(boolean open, boolean merged, String headRef, String baseRef, Set<String> labels) {}
+    /** A pull request's state, as far as the review gate cares; {@code etag} identifies this version. */
+    public record PullState(
+            boolean open, boolean merged, String headRef, String baseRef, Set<String> labels, String etag) {}
 
     @NonNull
     public PullState pull(@NonNull String repo, @NonNull String number) throws IOException, InterruptedException {
-        JSONObject pr = json(send(request("/repos/" + repo + "/pulls/" + encode(number)).GET(), "reading PR #" + number));
+        PullState state = pullIfChanged(repo, number, null);
+        if (state == null) {
+            throw new IOException("GitHub returned no PR #" + number);
+        }
+        return state;
+    }
+
+    /**
+     * Reads the PR only if it changed since {@code etag}: GitHub answers 304 with no body otherwise, and 304s don't
+     * count against the API rate limit. Returns {@code null} when unchanged.
+     */
+    @CheckForNull
+    public PullState pullIfChanged(@NonNull String repo, @NonNull String number, @CheckForNull String etag)
+            throws IOException, InterruptedException {
+        HttpRequest.Builder request = request("/repos/" + repo + "/pulls/" + encode(number)).GET();
+        if (etag != null) {
+            request.header("If-None-Match", etag);
+        }
+        HttpResponse<String> response = send(request, "reading PR #" + number);
+        if (response.statusCode() == 304) {
+            return null;
+        }
+        JSONObject pr = json(response);
         Set<String> labels = new TreeSet<>();
         JSONArray array = pr.optJSONArray("labels");
         for (int i = 0; array != null && i < array.size(); i++) {
@@ -96,7 +119,8 @@ public class GitHubRestClient {
                 pr.optBoolean("merged"),
                 head != null ? head.optString("ref", null) : null,
                 base != null ? base.optString("ref", null) : null,
-                labels);
+                labels,
+                response.headers().firstValue("ETag").orElse(null));
     }
 
     private HttpRequest.Builder request(String path) {
@@ -104,7 +128,8 @@ public class GitHubRestClient {
                 .timeout(TIMEOUT)
                 .header("Authorization", "Bearer " + token)
                 .header("Accept", "application/vnd.github+json")
-                .header("X-GitHub-Api-Version", "2022-11-28");
+                .header("X-GitHub-Api-Version", "2022-11-28")
+                .header("Accept-Encoding", "gzip"); // a PR is ~18 KB raw
     }
 
     private static HttpResponse<String> send(HttpRequest.Builder request, String what)
@@ -112,12 +137,12 @@ public class GitHubRestClient {
         lastCallAt = System.currentTimeMillis();
         HttpResponse<String> response;
         try {
-            response = EyesClient.sharedHttpClient().send(request.build(), HttpResponse.BodyHandlers.ofString());
+            response = EyesClient.sharedHttpClient().send(request.build(), EyesClient.GZIP_AWARE);
         } catch (IOException e) {
             lastError = what + ": " + e.getMessage();
             throw e;
         }
-        if (response.statusCode() / 100 != 2) {
+        if (response.statusCode() / 100 != 2 && response.statusCode() != 304) {
             lastError = what + ": GitHub returned HTTP " + response.statusCode()
                     + (response.statusCode() == 401 || response.statusCode() == 403 || response.statusCode() == 404
                             ? " (check the token and its access to the repository)"

@@ -41,6 +41,8 @@ public class PendingReview {
     private String githubApiUrl;
     private String githubCredentialsId;
     private transient long lastPullPolledAt;
+    /** GitHub's ETag for the PR as last read; unchanged PRs then cost a body-less, rate-limit-free 304. */
+    private transient String pullEtag;
     private transient int pullFailures;
     /** What the batch must contain; re-applied on every refresh so accepting other diffs can't pass the gate. */
     private io.jenkins.plugins.applitools.Expectations expectations;
@@ -267,6 +269,15 @@ public class PendingReview {
             interval = Math.min(Math.max(interval, unit) << Math.min(pullFailures, 10), 60 * unit);
         }
         return lastPullPolledAt + interval;
+    }
+
+    @CheckForNull
+    public String getPullEtag() {
+        return pullEtag;
+    }
+
+    public void setPullEtag(String pullEtag) {
+        this.pullEtag = pullEtag;
     }
 
     public void pullPolled(long when, boolean ok) {

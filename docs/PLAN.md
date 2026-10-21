@@ -123,7 +123,7 @@ The Design review check is **always posted** once the feature is on, even when i
 
 ## TODO: review later
 
-### Support jobs that aren't multibranch (asked 2026-10-21)
+### ~~Support jobs that aren't multibranch~~ Done 2026-10-21: see [SETUP-WITHOUT-MULTIBRANCH.md](SETUP-WITHOUT-MULTIBRANCH.md)
 
 Some teams can't use multibranch pipelines (repo or pipeline-format restrictions) and build PRs with a single Pipeline or Freestyle job, triggered by the GitHub Pull Request Builder (ghprb) or the Generic Webhook Trigger. What depends on multibranch today:
 

@@ -1,5 +1,7 @@
 # Setup guide: visual review on every pull request
 
+**This is the recommended setup:** a Multibranch Pipeline with a GitHub App. It gives you PR checks with details pages and instant reactions to labels and merges. **Can't use multibranch or the GitHub plugins?** See [Setup without multibranch](SETUP-WITHOUT-MULTIBRANCH.md): the same gate with just a token.
+
 When you're done, every pull request gets two checks from Jenkins:
 
 | Check | Passes when |

@@ -142,6 +142,18 @@ public class WithoutMultibranchTest {
     }
 
     @Test
+    void unchangedPullRequestsCostA304() throws Exception {
+        eyes.results(SHA, List.of(new FakeTest("s1", "unresolved")));
+        run(step("", "echo 'tests'"), Result.UNSTABLE);
+
+        watcherTick(); // first read: full PR, ETag remembered
+        watcherTick(); // unchanged: 304
+        watcherTick();
+
+        assertThat(github.notModified.get() >= 2, is(true));
+    }
+
+    @Test
     void mergeIsFoundByPollingAndMergesBaselines() throws Exception {
         eyes.results(SHA, List.of(new FakeTest("s1", "unresolved")));
         run(step("", "echo 'tests'"), Result.UNSTABLE);

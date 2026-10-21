@@ -279,7 +279,7 @@ public class EyesClient {
      * Eyes compresses JSON about 6x when asked (a 10-test batch: 7.6 KB → 1.2 KB), which matters for the review
      * watcher's polling. Java's HTTP client doesn't decompress on its own, so do it here.
      */
-    static final HttpResponse.BodyHandler<String> GZIP_AWARE = info -> {
+    public static final HttpResponse.BodyHandler<String> GZIP_AWARE = info -> {
         boolean gzip = info.headers()
                 .firstValue("Content-Encoding")
                 .map(v -> v.equalsIgnoreCase("gzip"))
