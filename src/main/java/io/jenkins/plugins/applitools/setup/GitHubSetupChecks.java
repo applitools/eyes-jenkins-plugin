@@ -2,7 +2,7 @@ package io.jenkins.plugins.applitools.setup;
 
 import hudson.Extension;
 import io.jenkins.plugins.applitools.ApplitoolsGlobalConfiguration;
-import io.jenkins.plugins.applitools.review.LabelEventSubscriber;
+import io.jenkins.plugins.applitools.review.ReviewEvents;
 import io.jenkins.plugins.applitools.scm.CommitStatusPublisher;
 import io.jenkins.plugins.applitools.scm.GitHubCommitStatusPublisher;
 import java.util.ArrayList;
@@ -33,7 +33,7 @@ public class GitHubSetupChecks extends SetupCheck {
                         "Manage Jenkins → System → GitHub → Advanced → Shared secrets → add your webhook secret.")
                 : SetupItem.ok("Webhook signatures", "Jenkins only accepts webhooks signed with your secret."));
 
-        long last = LabelEventSubscriber.getLastPullRequestEvent();
+        long last = ReviewEvents.getLastPullRequestEvent();
         if (last == 0) {
             items.add(SetupItem.warning("Pull request webhooks", "None received since Jenkins started. Label changes"
                             + " and merges only take effect when they arrive.",
@@ -41,7 +41,7 @@ public class GitHubSetupChecks extends SetupCheck {
                             + " /github-webhook/ and Recent Deliveries in GitHub."));
         } else {
             long minutes = TimeUnit.MILLISECONDS.toMinutes(System.currentTimeMillis() - last);
-            String repo = LabelEventSubscriber.getLastPullRequestRepo();
+            String repo = ReviewEvents.getLastPullRequestRepo();
             items.add(SetupItem.ok("Pull request webhooks", "Last one arrived "
                     + (minutes == 0 ? "less than a minute" : minutes + " minute" + (minutes == 1 ? "" : "s"))
                     + " ago" + (repo != null ? " (" + repo + ")" : "") + "."));

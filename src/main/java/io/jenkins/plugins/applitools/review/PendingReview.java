@@ -35,6 +35,8 @@ public class PendingReview {
     private transient int failures;
 
     private boolean labelPresent;
+    /** The PR closed (merged); kept only until its baseline merge succeeds. */
+    private boolean closed;
     /** What the batch must contain; re-applied on every refresh so accepting other diffs can't pass the gate. */
     private io.jenkins.plugins.applitools.Expectations expectations;
     private String lastVisualState;
@@ -229,6 +231,14 @@ public class PendingReview {
 
     public void setExpectations(io.jenkins.plugins.applitools.Expectations expectations) {
         this.expectations = expectations;
+    }
+
+    public boolean isClosed() {
+        return closed;
+    }
+
+    public void setClosed(boolean closed) {
+        this.closed = closed;
     }
 
     public boolean isPullRequest() {

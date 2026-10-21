@@ -9,7 +9,7 @@ public final class LabelEventSubscriberTestAccess {
 
     /** Delivers a label change and waits for its re-evaluation to finish. */
     public static void handleAndWait(String repoSlug, String number, String label, boolean added) throws Exception {
-        for (var future : LabelEventSubscriber.handle(repoSlug, number, label, added)) {
+        for (var future : ReviewEvents.labelChanged(repoSlug, number, label, added)) {
             future.get(30, TimeUnit.SECONDS);
         }
     }
@@ -17,14 +17,14 @@ public final class LabelEventSubscriberTestAccess {
     /** Delivers a "closed" PR event and waits for any baseline merge to finish. */
     public static void mergedAndWait(String repoSlug, String number, boolean merged, String head, String base)
             throws Exception {
-        for (var future : LabelEventSubscriber.merged(repoSlug, number, merged, head, base)) {
+        for (var future : ReviewEvents.closed(repoSlug, number, merged, head, base)) {
             future.get(30, TimeUnit.SECONDS);
         }
     }
 
     /** Runs the raw-payload path and waits for the merge it schedules; false if it wasn't a closed-PR event. */
     public static boolean handleMergedPayloadAndWait(String payload) throws Exception {
-        var work = LabelEventSubscriber.handleMerged(payload);
+        var work = ReviewEvents.handleMerged(payload);
         if (work == null) {
             return false;
         }
