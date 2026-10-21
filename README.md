@@ -31,3 +31,4 @@ mvn verify             # build target/applitools-jenkins.hpi and run tests
 | `ReviewWatcher`, `ReviewEvaluator`, `review/` | Follows reviews in Eyes after the build, and reacts to label webhooks |
 | `EyesClient` | Eyes REST calls |
 | `docs/PLAN.md` | Roadmap and design decisions |
+| `docs/SPEC.md` | Behavior contract shared with the GitHub Action, plus Eyes/GitHub API notes |
