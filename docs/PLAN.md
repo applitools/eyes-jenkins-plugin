@@ -125,6 +125,8 @@ The Design review check is **always posted** once the feature is on, even when i
 
 ### ~~Support jobs that aren't multibranch~~ Done 2026-10-21: see [SETUP-WITHOUT-MULTIBRANCH.md](SETUP-WITHOUT-MULTIBRANCH.md)
 
+Verified live on a plain Pipeline job (`applitools-pipeline-test`) with a Username with password token credential: statuses posted by the token, label read at build time, and with webhooks cut off (smee stopped) a label removal was picked up by polling within seconds. With webhooks on, token and multibranch reviews both updated within a second.
+
 Some teams can't use multibranch pipelines (repo or pipeline-format restrictions) and build PRs with a single Pipeline or Freestyle job, triggered by the GitHub Pull Request Builder (ghprb) or the Generic Webhook Trigger. What depends on multibranch today:
 
 | Piece | Today | Needed |
