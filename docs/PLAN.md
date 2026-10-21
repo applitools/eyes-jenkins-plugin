@@ -121,6 +121,39 @@ The Design review check is **always posted** once the feature is on, even when i
 6. **Auth header:** can the API key go in a header instead of the `apiKey` query parameter?
 7. **Re-runs:** what happens when a closed batch's pointer ID is reused by a re-run of the same commit?
 
+## TODO: review later
+
+### Support jobs that aren't multibranch (asked 2026-10-21)
+
+Some teams can't use multibranch pipelines (repo or pipeline-format restrictions) and build PRs with a single Pipeline or Freestyle job, triggered by the GitHub Pull Request Builder (ghprb) or the Generic Webhook Trigger. What depends on multibranch today:
+
+| Piece | Today | Needed |
+| --- | --- | --- |
+| PR / branch / commit detection | GitHub resolver reads the multibranch source; env fallback reads `CHANGE_*` (multibranch-only) and `GIT_*` | A resolver for `ghprb*` and Generic Webhook Trigger variables, plus explicit step options: `repo`, `pullRequest`, `commit`, `branch`, `targetBranch` |
+| Posting checks / statuses | Uses the multibranch source's credentials | `githubCredentialsId` step option; post commit statuses directly (checks still need a GitHub App) |
+| Reading PR labels | Same | Same credential option |
+| Label/merge webhooks, watcher, baseline merge | Job-type independent (matched by repo + PR number) | Nothing |
+
+Effort: contained. One resolver, a few step options, and a status publisher that takes explicit credentials. Add a setup-guide section and setup-page rows for these jobs.
+
+### A GitHub Actions version of the same concept (asked 2026-10-21)
+
+Investigate and build an Action (e.g. `applitools/visual-review-action`) that gives Actions users the same flow: Visual tests and Design review checks, Eyes-team designers, `expectApps`, baseline merge on PR merge.
+
+First thoughts on how it maps:
+
+| Plugin piece | Actions equivalent |
+| --- | --- |
+| `applitools { }` env setup, batch close, results | A JS action wrapping the test step (or `pre`/`post` steps): sets `APPLITOOLS_*`, closes the batch, reads results |
+| GitHub App + Checks plugin | Built in: the workflow's `GITHUB_TOKEN` with `checks: write`, no App to create |
+| PR head SHA, branch names | `github.event.pull_request.head.sha` / `head.ref` / `base.ref` (no merge-commit trap) |
+| Label webhooks | A workflow on `pull_request: [labeled, unlabeled]` that re-evaluates Design review, no re-run of tests |
+| Baseline merge | A workflow on `pull_request: [closed]` with `merged == true` |
+| **Review watcher** (checks update after accepting in Eyes) | **The hard part:** no long-running process. Options: a `schedule` workflow re-checking open PRs (cron, 5-minute minimum); an Eyes webhook / batch notification → `repository_dispatch`; or rely on Eyes' own GitHub integration for that status |
+| Setup page | A `doctor` mode of the action that prints the same checklist to the job summary |
+
+Setup would likely be **easier than the Jenkins version and than Chromatic**: no GitHub App, no webhooks or relay, just secrets and a workflow file. Shared logic (results parsing, the gate rules, team resolution) is worth extracting into a spec so both implementations behave identically.
+
 ## Parked: come back after the MVP
 
 ### Eyes NLP hangs the Playwright SDK in our Podman agent (found 2026-10-20)

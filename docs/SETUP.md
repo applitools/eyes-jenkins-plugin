@@ -13,6 +13,8 @@ When the pull request merges, the plugin merges its Eyes baselines into the targ
 
 Setup takes about 30 minutes. Do the steps in order.
 
+**Prefer configuration as code?** Steps 1, 3 and 4 fit in one `jenkins.yaml`: see [Set it all up with one file](#set-it-all-up-with-one-file-configuration-as-code).
+
 ## Before you start
 
 - [ ] **Jenkins 2.568 or newer** that GitHub can send webhooks to. If yours is on a laptop or behind a firewall, see [Local Jenkins: webhook relay](#local-jenkins-webhook-relay).
@@ -70,7 +72,7 @@ Jenkins talks to GitHub as a GitHub App. This is recommended: results then appea
 
 | Kind | ID | Value |
 | --- | --- | --- |
-| GitHub App | `github-app` | App ID, plus the full contents of `jenkins-github-app.pem`. Under **Advanced**, set **Owner** to the repo's owner, then click **Test Connection**. |
+| GitHub App | `github-app` | App ID, plus the full contents of `jenkins-github-app.pem`. Leave the repository access setting at its default (the owner is inferred from each job's repository; older plugin versions instead show an **Owner** field under **Advanced**: set it to the repo's owner). Click **Test Connection**. |
 | Secret text | `github-webhook-secret` | The webhook secret |
 | Secret text | `applitools-api-key` | Your Eyes **run** key |
 | Secret text | `applitools-read-api-key` | Your Eyes **read** key |
@@ -273,6 +275,69 @@ Branch names follow Eyes' `owner/repo/branch` convention, so baselines line up w
 | **Baseline merge: "N baseline conflicts"** | The same checkpoints also changed on the target branch. Resolve them in Eyes under **Compare & merge branches**. |
 | Design review stays waiting after a designer accepted | The changes must be **saved** in Eyes, and the accepting user must be in a designers team (or listed by email). **Manage Jenkins → Applitools setup** shows exactly who counts. |
 | **Design review: "Designers couldn't be determined"** | An Eyes team in Designers wasn't found (check the spelling against Eyes → Admin → Teams), or the read key can't list teams. Nobody can approve until it's fixed. |
+
+## Set it all up with one file (Configuration as Code)
+
+With the [Configuration as Code](https://plugins.jenkins.io/configuration-as-code/) plugin, one `jenkins.yaml` replaces steps 1, 3 and 4: plugins, credentials, webhook signing, Jenkins URL and the Applitools settings. You still create the GitHub App (step 2) and the multibranch job (step 5), and set branch protection (step 8). The Applitools part of this file is covered by the plugin's tests.
+
+**1. Plugins.** In a Docker image, add these to `plugins.txt` (for `jenkins-plugin-cli`). Copy the Applitools `.hpi` into `$JENKINS_HOME/plugins/` until it's published.
+```
+configuration-as-code
+github-branch-source
+github-checks
+workflow-aggregator
+```
+
+**2. `jenkins.yaml`.** Secrets come from environment variables (`${VAR}`) or files (`${readFile:/run/secrets/name}`), so nothing sensitive goes in the file:
+
+```yaml
+credentials:
+  system:
+    domainCredentials:
+      - credentials:
+          - gitHubApp:
+              id: github-app
+              appID: "${GITHUB_APP_ID}"
+              privateKey: "${readFile:/run/secrets/github-app.pem}"   # converted with openssl pkcs8 (step 2)
+          - string:
+              scope: GLOBAL
+              id: github-webhook-secret
+              secret: "${GITHUB_WEBHOOK_SECRET}"
+          - string:
+              scope: GLOBAL
+              id: applitools-api-key
+              secret: "${APPLITOOLS_API_KEY}"        # run key
+          - string:
+              scope: GLOBAL
+              id: applitools-read-api-key
+              secret: "${APPLITOOLS_READ_KEY}"       # read key
+          - string:
+              scope: GLOBAL
+              id: applitools-merge-api-key
+              secret: "${APPLITOOLS_MERGE_KEY}"      # merge key (team + user)
+
+unclassified:
+  location:
+    url: "https://jenkins.example.com/"
+  gitHubPluginConfig:
+    hookSecretConfigs:
+      - credentialsId: github-webhook-secret
+  applitools:
+    designers: "team:Design"                       # Eyes team and/or emails; omit to let anyone approve
+    # The rest are the defaults. Keep only what you change.
+    serverUrl: "https://eyes.applitools.com"
+    githubReporting: AUTO                          # or CHECKS / STATUSES
+    designReviewLabel: "design-review"
+    designReviewByDefault: false                   # true: every PR needs design review
+    designReviewCheck: true
+    mergeBaselines: true
+```
+
+**3. Load it.** Point `CASC_JENKINS_CONFIG` at the file and restart Jenkins, or use **Manage Jenkins → Configuration as Code → Reload existing configuration**.
+
+**4. Check it.** Open **Manage Jenkins → Applitools setup**.
+
+To capture an existing, hand-configured Jenkins as YAML, use **Manage Jenkins → Configuration as Code → View Configuration**; the Applitools section appears under `unclassified: applitools:`.
 
 ## Using a personal access token instead of a GitHub App
 

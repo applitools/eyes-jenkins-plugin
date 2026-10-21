@@ -84,6 +84,17 @@
       <optional>true</optional>
     </dependency>
 
+    <!-- Test-only: Configuration as Code import/export. -->
+    <dependency>
+      <groupId>io.jenkins</groupId>
+      <artifactId>configuration-as-code</artifactId>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>io.jenkins.configuration-as-code</groupId>
+      <artifactId>test-harness</artifactId>
+      <scope>test</scope>
+    </dependency>
     <!-- Test-only: lets JenkinsRule run Pipeline jobs that call our step. -->
     <dependency>
       <groupId>org.jenkins-ci.plugins.workflow</groupId>
