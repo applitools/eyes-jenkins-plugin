@@ -15,9 +15,20 @@ public abstract class CommitStatusPublisher implements ExtensionPoint {
     /** How GitHub results are delivered; set in Manage Jenkins → System → Applitools Eyes. */
     public enum Mode {
         /** Checks when the job uses a GitHub App, commit statuses otherwise. */
-        AUTO,
-        CHECKS,
-        STATUSES
+        AUTO("Automatic: checks with a GitHub App, commit statuses with a token"),
+        CHECKS("Always checks"),
+        STATUSES("Always commit statuses");
+
+        private final String displayName;
+
+        Mode(String displayName) {
+            this.displayName = displayName;
+        }
+
+        /** Shown in Manage Jenkins → System. */
+        public String getDisplayName() {
+            return displayName;
+        }
     }
 
     /** Commit status state names, as the SCM host's API spells them. */

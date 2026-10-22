@@ -1,38 +1,65 @@
 <?jelly escape-by-default='true'?>
 <j:jelly xmlns:j="jelly:core" xmlns:f="/lib/form" xmlns:c="/lib/credentials">
   <f:section title="Applitools Eyes">
-    <f:entry title="Eyes server URL" field="serverUrl">
-      <f:textbox default="${descriptor.DEFAULT_SERVER_URL}" />
-    </f:entry>
-    <f:entry title="Default API key credential" field="credentialsId">
-      <c:select default="${descriptor.DEFAULT_CREDENTIALS_ID}" />
-    </f:entry>
-    <f:entry title="Default read API key credential" field="readCredentialsId">
-      <c:select />
-    </f:entry>
-    <f:entry title="Report to GitHub as" field="githubReporting">
-      <f:enum>${it.name()}</f:enum>
-    </f:entry>
-    <f:entry field="designReviewCheck">
-      <f:checkbox title="Post the &quot;Applitools / Design review&quot; check on pull requests" default="true" />
-    </f:entry>
-    <f:entry title="Design review label" field="designReviewLabel">
-      <f:textbox default="${descriptor.DEFAULT_DESIGN_REVIEW_LABEL}" />
-    </f:entry>
-    <f:entry title="Designers" field="designers">
-      <f:textarea />
-    </f:entry>
-    <f:entry field="designReviewByDefault">
-      <f:checkbox title="Require design review on every pull request, not just labeled ones" />
-    </f:entry>
-    <f:entry field="followBranchBuilds">
-      <f:checkbox title="Keep updating results for branch builds (not just pull requests) after they finish" />
-    </f:entry>
-    <f:entry field="mergeBaselines">
-      <f:checkbox title="Merge a pull request's Eyes baselines into its target branch when it merges" default="true" />
-    </f:entry>
-    <f:entry title="Baseline merge API key credential" field="mergeCredentialsId">
-      <c:select />
-    </f:entry>
+    <f:description>
+      Visual review on pull requests. Defaults for every <code>applitools { }</code> step; a Jenkinsfile can override them.
+      To check that everything works, open <a href="${rootURL}/manage/applitools-setup">Applitools setup</a>.
+    </f:description>
+
+    <f:section title="Eyes server">
+      <f:entry title="Server URL" field="serverUrl">
+        <f:textbox default="${descriptor.DEFAULT_SERVER_URL}" />
+      </f:entry>
+    </f:section>
+
+    <f:section title="API keys">
+      <f:entry title="Run key" field="credentialsId"
+               description="Uploads test results. Secret text credential.">
+        <c:select default="${descriptor.DEFAULT_CREDENTIALS_ID}" />
+      </f:entry>
+      <f:entry title="Read key" field="readCredentialsId"
+               description="Reads results, approvals and Eyes teams. Empty: uses applitools-read-api-key if it exists.">
+        <c:select />
+      </f:entry>
+      <f:entry title="Merge key" field="mergeCredentialsId"
+               description="Merges baselines when a pull request merges. Empty: uses applitools-merge-api-key if it exists.">
+        <c:select />
+      </f:entry>
+    </f:section>
+
+    <f:section title="Pull request results">
+      <f:entry title="Report to GitHub as" field="githubReporting">
+        <f:enum>${it.displayName}</f:enum>
+      </f:entry>
+      <f:entry field="designReviewCheck">
+        <f:checkbox title="Post the &quot;Applitools / Design review&quot; result on every pull request" default="true" />
+      </f:entry>
+    </f:section>
+
+    <f:section title="Design review">
+      <f:entry title="Designers" field="designers"
+               description="Who can approve: team:&lt;Eyes team&gt; and/or Eyes login emails, one per line or comma-separated. Empty: anyone.">
+        <f:textarea />
+      </f:entry>
+      <f:entry title="Label" field="designReviewLabel"
+               description="Adding this label to a pull request requires a designer's approval.">
+        <f:textbox default="${descriptor.DEFAULT_DESIGN_REVIEW_LABEL}" />
+      </f:entry>
+      <f:entry field="designReviewByDefault">
+        <f:checkbox title="Require design review on every pull request, not just labeled ones" />
+      </f:entry>
+    </f:section>
+
+    <f:section title="Baselines">
+      <f:entry field="mergeBaselines">
+        <f:checkbox title="When a pull request merges, merge its Eyes baselines into the target branch" default="true" />
+      </f:entry>
+    </f:section>
+
+    <f:advanced title="Advanced">
+      <f:entry field="followBranchBuilds">
+        <f:checkbox title="Keep updating results for branch builds (not just pull requests) after they finish" />
+      </f:entry>
+    </f:advanced>
   </f:section>
 </j:jelly>

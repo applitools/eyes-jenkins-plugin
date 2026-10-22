@@ -90,8 +90,9 @@ Delete the `.pem` files once the GitHub App credential tests OK.
 
 - **Jenkins Location → Jenkins URL:** the address people use to reach Jenkins.
 - **GitHub → Advanced → Shared secrets → Add →** `github-webhook-secret`. Jenkins then rejects webhooks that aren't signed by your App. Don't add a GitHub Server entry; the App manages its own webhook.
-- **Applitools Eyes:**
-  - **Eyes server URL:** leave the default unless you use a dedicated or on-prem Eyes.
+- **Applitools Eyes** (grouped into Eyes server, API keys, Pull request results, Design review, Baselines):
+  - **Server URL:** leave the default unless you use a dedicated or on-prem Eyes.
+  - **API keys:** pick the run, read and merge key credentials (or leave read/merge empty to use the standard IDs from step 3).
   - **Designers:** who may approve design reviews. Use an **Eyes team**, `team:Design`, and manage membership in Eyes (Admin → Teams), where designers already review. You can also list Eyes login emails, or mix both: `team:Design, lead@example.com`. Leave empty to let any reviewer approve.
   - **Design review label:** defaults to `design-review`.
   - **Merge a pull request's Eyes baselines into its target branch when it merges:** on by default.
