@@ -118,7 +118,10 @@ class SetupPageTest {
     @Test
     void pageRendersForAdmins() throws Exception {
         add(ApplitoolsGlobalConfiguration.DEFAULT_READ_CREDENTIALS_ID, READ);
-        HtmlPage page = j.createWebClient().goTo("manage/applitools-setup");
+        HtmlPage start = j.createWebClient().goTo("manage/applitools-setup");
+        // Opening the page runs nothing; the button does (a POST).
+        assertThat(start.getByXPath("//table[@id='applitools-setup']").isEmpty(), is(true));
+        HtmlPage page = j.submit(start.getFormByName("run"));
 
         String text = page.asNormalizedText();
         assertThat(text, containsString("Applitools setup"));
@@ -126,5 +129,13 @@ class SetupPageTest {
         assertThat(text, containsString("allowed to read results"));
         List<?> rows = page.getByXPath("//table[@id='applitools-setup']/tbody/tr");
         assertThat(rows.size() > 5, is(true));
+    }
+
+    @Test
+    void checksDontRunOnAGetRequest() throws Exception {
+        var client = j.createWebClient();
+        client.setThrowExceptionOnFailingStatusCode(false);
+        var response = client.goTo("manage/applitools-setup/run").getWebResponse();
+        assertThat(response.getStatusCode() == 405 || response.getStatusCode() == 404, is(true));
     }
 }

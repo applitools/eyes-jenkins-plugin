@@ -96,8 +96,13 @@ Delete the `.pem` files once the GitHub App credential tests OK.
   - **Pull request results:** leave **Report to GitHub as** on *Automatic* (checks with a GitHub App, commit statuses with a token), and leave the Design review result on.
   - **Design review → Designers:** who may approve design reviews. Use an **Eyes team**, `team:Design`, and manage membership in Eyes (Admin → Teams), where designers already review. You can also list Eyes login emails, or mix both: `team:Design, lead@example.com`. Leave empty to let any reviewer approve.
   - **Design review → Label:** defaults to `design-review`. Tick **Require design review on every pull request** to skip the label.
+  - **Design review → Jenkinsfiles can't loosen design review:** tick it if people who can edit the Jenkinsfile shouldn't be able to turn design review off, choose their own designers or change the label for their pull request. A Jenkinsfile can still *require* design review.
   - **Baselines:** merging a pull request's Eyes baselines into its target branch when it merges is on by default.
-  - **Advanced:** leave as is.
+  - **Advanced:** the defaults are the safe choices. Change them only if you need to:
+    - **Don't name reviewers in pull request results:** results otherwise show who approved, by Eyes login email. Consider it for public repositories.
+    - **Run visual tests on pull requests from forks:** off by default, because a fork's test code would get your Eyes run key. While it's off, fork pull request builds stop with a message saying why. When on, each fork PR gets its own Eyes branch (`owner/repo/pr-<number>`).
+    - **Allow http:// Eyes and GitHub URLs:** https is required except for servers on the Jenkins machine itself.
+    - **Older on-premises Eyes: retry closing batches with the run key in the URL:** only if your Eyes server asks for it; URL parameters can end up in proxy logs.
 
 Save.
 
@@ -111,7 +116,7 @@ Save.
   - **Behaviors:**
     - *Discover branches:* "Exclude branches that are also filed as PRs"
     - *Discover pull requests from origin:* "The current pull request revision"
-    - *Discover pull requests from forks:* remove it (fork builds would get your Eyes key)
+    - *Discover pull requests from forks:* remove it. Fork builds run untrusted code; the plugin refuses to give them your Eyes key anyway, so they'd only fail.
 - **Scan Multibranch Pipeline Triggers:** ✅ Periodically if not otherwise run, **1 minute** (a safety net for missed webhooks)
 
 Save. Jenkins scans the repo; that's expected even before you add a Jenkinsfile.
@@ -142,7 +147,7 @@ The plugin hands everything to the Eyes SDK through `APPLITOOLS_*` environment v
 
 ### Check your setup so far
 
-Open **Manage Jenkins → Applitools setup**. It checks everything above, live:
+Open **Manage Jenkins → Applitools setup** and click **Run checks**. It checks everything above, live:
 - the Eyes server and all three keys (validated against Eyes with requests that change nothing)
 - the GitHub Checks plugin and webhook signing
 - whether pull request webhooks are arriving
@@ -218,7 +223,7 @@ Don't require `Applitools / Baseline merge`: it only appears after a pull reques
 
 ### `applitools` step options
 
-All are optional.
+All are optional. In Pipeline, the run key is handled like `withCredentials` handles secrets: masked in the log, encrypted in the build's saved state, and flagged if a script puts it into a Groovy string (`"${env.APPLITOOLS_API_KEY}"`); pass it to tools through the environment instead.
 
 | Option | Default | What it does |
 | --- | --- | --- |
@@ -260,7 +265,7 @@ Branch names follow Eyes' `owner/repo/branch` convention, so baselines line up w
 
 ## Troubleshooting
 
-**Start with Manage Jenkins → Applitools setup.** It catches most of the problems below and says how to fix each one.
+**Start with Manage Jenkins → Applitools setup → Run checks.** It catches most of the problems below and says how to fix each one.
 
 | Symptom | Cause and fix |
 | --- | --- |
@@ -268,6 +273,9 @@ Branch names follow Eyes' `owner/repo/branch` convention, so baselines line up w
 | Webhook deliveries show **405** | The webhook URL is missing the trailing slash: use `/github-webhook/`. |
 | Webhook deliveries show **400** | Signature mismatch: the secret in the GitHub App and in `github-webhook-secret` differ. |
 | Log: **"Eyes refused to share results (HTTP 403)"** | Run keys can't read results. Add the `applitools-read-api-key` credential. |
+| Log: **"This pull request comes from a fork"** | Fork PRs don't get your Eyes key by default. Remove fork discovery from the job (step 5), or let an admin allow fork PRs under **Manage Jenkins → System → Applitools Eyes → Advanced**. |
+| Log: **"must use https://"** | Keys aren't sent over plain http to other machines. Use the server's https address, or let an admin allow http under **Advanced**. |
+| Log: **"Design review is locked"** | An admin ticked **Jenkinsfiles can't loosen design review**, so the Jenkinsfile's `designReview: false`, `designers` and `designReviewLabel` are ignored. |
 | Log: **"… points at a reserved address"** or **"must start with https://"** | `serverUrl` or `githubApiUrl` names a link-local or cloud metadata address, or isn't a web URL. Use your Eyes server's or GitHub's address. |
 | Log: **"Response larger than 16 MB; not read"** | A server returned far more than any Eyes or GitHub response. Check `serverUrl`. For a legitimately huge batch, raise the limit with the system property `io.jenkins.plugins.applitools.EyesClient.maxResponseMegabytes`. |
 | Log: **"No Secret text credential with ID …"** | The credential ID doesn't match exactly (check spelling). |

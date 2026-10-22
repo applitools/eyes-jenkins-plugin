@@ -51,6 +51,8 @@ public class PendingReview {
     private String lastVisualState;
     private String lastDesignState;
     private boolean settled;
+    /** The Eyes branch the build's tests ran on; {@code null} for reviews saved before it was recorded. */
+    private String eyesBranch;
 
     public PendingReview(
             @NonNull String jobFullName,
@@ -300,6 +302,15 @@ public class PendingReview {
         return mergeBaselines != null
                 ? mergeBaselines
                 : io.jenkins.plugins.applitools.ApplitoolsGlobalConfiguration.get().isMergeBaselines();
+    }
+
+    @CheckForNull
+    public String getEyesBranch() {
+        return eyesBranch;
+    }
+
+    public void setEyesBranch(@CheckForNull String eyesBranch) {
+        this.eyesBranch = eyesBranch;
     }
 
     public boolean isClosed() {

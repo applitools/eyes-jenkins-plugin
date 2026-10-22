@@ -32,6 +32,20 @@ public record BatchSettings(
     @NonNull
     public static BatchSettings compute(
             @NonNull ScmInfo scm, @NonNull String jobFullName, int buildNumber, @NonNull Overrides overrides) {
+        return compute(scm, jobFullName, buildNumber, overrides, false);
+    }
+
+    /**
+     * @param fork the build is a pull request from a fork: its branch name is the fork's, which can match one of the
+     *     repository's own branches (e.g. a fork's {@code main}), so it gets {@code owner/repo/pr-<number>} instead
+     */
+    @NonNull
+    public static BatchSettings compute(
+            @NonNull ScmInfo scm,
+            @NonNull String jobFullName,
+            int buildNumber,
+            @NonNull Overrides overrides,
+            boolean fork) {
         String slug = scm.repoSlug();
         String label = slug != null ? slug : jobFullName;
         String prefix = slug != null ? slug + "/" : "";
@@ -51,7 +65,10 @@ public record BatchSettings(
             defaultName = jobFullName + " #" + buildNumber;
         }
 
-        String branchName = firstNonNull(overrides.branchName(), scm.branch() != null ? prefix + scm.branch() : null);
+        String ownBranch = fork && scm.isPullRequest()
+                ? prefix + "pr-" + scm.changeId()
+                : scm.branch() != null ? prefix + scm.branch() : null;
+        String branchName = firstNonNull(overrides.branchName(), ownBranch);
         String parentBranchName = firstNonNull(
                 overrides.parentBranchName(), scm.targetBranch() != null ? prefix + scm.targetBranch() : null);
 

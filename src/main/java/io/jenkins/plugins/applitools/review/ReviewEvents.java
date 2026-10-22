@@ -18,7 +18,6 @@ import java.util.concurrent.Future;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import jenkins.model.Jenkins;
-import jenkins.util.Timer;
 import net.sf.json.JSONObject;
 
 /**
@@ -48,6 +47,28 @@ public final class ReviewEvents {
     private static final Set<String> RELEVANT_ACTIONS = Set.of("closed", "labeled", "unlabeled");
 
     private static final java.util.regex.Pattern REPO = java.util.regex.Pattern.compile("[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+");
+
+    /**
+     * Runs webhook follow-ups and baseline merges: two threads of the plugin's own, so a burst of events or a slow
+     * merge (which polls Eyes for up to 10 minutes) can't occupy Jenkins' shared timer threads.
+     */
+    private static final java.util.concurrent.ExecutorService EXECUTOR = executor();
+
+    private static java.util.concurrent.ExecutorService executor() {
+        java.util.concurrent.ThreadPoolExecutor pool = new java.util.concurrent.ThreadPoolExecutor(
+                2,
+                2,
+                60,
+                java.util.concurrent.TimeUnit.SECONDS,
+                new java.util.concurrent.LinkedBlockingQueue<>(),
+                new hudson.util.NamingThreadFactory(
+                        new hudson.util.DaemonThreadFactory(), "Applitools review events"));
+        pool.allowCoreThreadTimeOut(true);
+        return pool;
+    }
+
+    /** Builds with a GitHub read queued; a burst of webhooks for one PR then costs one read, not one each. */
+    private static final Set<String> QUEUED = ConcurrentHashMap.newKeySet();
 
     /** Builds whose baseline merge is running, so a repeated event doesn't start a second one. */
     private static final Set<String> MERGING = ConcurrentHashMap.newKeySet();
@@ -86,7 +107,12 @@ public final class ReviewEvents {
         List<Future<?>> work = new ArrayList<>();
         ReviewRegistry registry = ReviewRegistry.get();
         for (PendingReview review : registry.forPullRequest(repoSlug, number)) {
-            work.add(Timer.get().submit(() -> {
+            String key = review.getJobFullName() + "#" + review.getBuildNumber();
+            if (!QUEUED.add(key)) {
+                continue; // a read is already queued; it will see this change too
+            }
+            work.add(EXECUTOR.submit(() -> {
+                QUEUED.remove(key);
                 try (ACLContext ignored = ACL.as2(ACL.SYSTEM2)) {
                     Run<?, ?> run = findRun(review);
                     if (run == null) {
@@ -125,7 +151,7 @@ public final class ReviewEvents {
         List<Future<?>> work = new ArrayList<>();
         ReviewRegistry registry = ReviewRegistry.get();
         for (PendingReview review : registry.forPullRequest(repoSlug, number)) {
-            work.add(Timer.get().submit(() -> {
+            work.add(EXECUTOR.submit(() -> {
                 try (ACLContext ignored = ACL.as2(ACL.SYSTEM2)) {
                     closedNow(review, registry, merged, headRef, baseRef);
                 } catch (InterruptedException e) {
@@ -183,7 +209,7 @@ public final class ReviewEvents {
                     || review.isLabelPresent() == added) {
                 continue;
             }
-            work.add(Timer.get().submit(() -> {
+            work.add(EXECUTOR.submit(() -> {
                 try (ACLContext ignored = ACL.as2(ACL.SYSTEM2)) {
                     labelChangedNow(review, registry, added);
                 } catch (Exception e) {

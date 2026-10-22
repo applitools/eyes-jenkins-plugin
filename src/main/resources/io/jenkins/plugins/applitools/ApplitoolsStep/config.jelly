@@ -1,0 +1,4 @@
+<?jelly escape-by-default='true'?>
+<j:jelly xmlns:j="jelly:core" xmlns:st="jelly:stapler">
+  <st:include page="config.jelly" class="io.jenkins.plugins.applitools.ApplitoolsBuildWrapper"/>
+</j:jelly>

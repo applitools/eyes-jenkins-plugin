@@ -69,3 +69,8 @@ unclassified:
     designReviewByDefault: true
     mergeBaselines: false
     followBranchBuilds: true
+    allowForkPullRequests: true
+    allowHttp: true
+    apiKeyInQuery: true
+    hideReviewers: true
+    lockDesignReview: true

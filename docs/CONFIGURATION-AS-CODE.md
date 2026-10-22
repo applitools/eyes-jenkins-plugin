@@ -305,6 +305,11 @@ Everything under `unclassified: applitools:` is optional. Leave out what you don
 | `designReviewByDefault` | `false` | Require design review on every pull request |
 | `mergeBaselines` | `true` | Baselines → merge when a pull request merges |
 | `followBranchBuilds` | `false` | Advanced → Keep updating results for branch builds |
+| `lockDesignReview` | `false` | Design review → Jenkinsfiles can't loosen design review |
+| `hideReviewers` | `false` | Advanced → Don't name reviewers in pull request results |
+| `allowForkPullRequests` | `false` | Advanced → Run visual tests on pull requests from forks |
+| `allowHttp` | `false` | Advanced → Allow http:// Eyes and GitHub URLs on other machines |
+| `apiKeyInQuery` | `false` | Advanced → Older on-premises Eyes: retry closing batches with the run key in the URL |
 
 ## 4. Start Jenkins
 
@@ -322,7 +327,7 @@ Open **Manage Jenkins → Nodes → playwright**. The page shows the agent's sec
 
 ## 6. Check it
 
-Open **Manage Jenkins → Applitools setup**. Every row should be ✅, apart from "pull request webhooks" until the first one arrives. Then continue with the setup guide: [add the Jenkinsfile](SETUP.md#7-add-a-jenkinsfile), [require the checks](SETUP.md#8-require-the-checks-before-merging) and [try it](SETUP.md#9-try-it).
+Open **Manage Jenkins → Applitools setup** and click **Run checks**. Every row should be ✅, apart from "pull request webhooks" until the first one arrives. Then continue with the setup guide: [add the Jenkinsfile](SETUP.md#7-add-a-jenkinsfile), [require the checks](SETUP.md#8-require-the-checks-before-merging) and [try it](SETUP.md#9-try-it).
 
 ## Changing the configuration later
 

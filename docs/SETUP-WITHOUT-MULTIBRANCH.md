@@ -111,10 +111,12 @@ pipeline {
         [key: 'PR_BRANCH', value: '$.pull_request.head.ref'],
         [key: 'PR_TARGET', value: '$.pull_request.base.ref'],
         [key: 'PR_REPO',   value: '$.repository.full_name'],
+        [key: 'PR_HEAD_REPO', value: '$.pull_request.head.repo.full_name'],
       ],
       // Build when a PR opens or gets new commits; the plugin polls for labels and merges itself.
-      regexpFilterText: '$PR_ACTION',
-      regexpFilterExpression: '^(opened|synchronize|reopened)$'
+      // Only PRs from this repository's own branches: a fork's code would get your Eyes key.
+      regexpFilterText: '$PR_HEAD_REPO $PR_REPO $PR_ACTION',
+      regexpFilterExpression: '^(\\S+) \\1 (opened|synchronize|reopened)$'
     )
   }
   stages {
@@ -196,7 +198,7 @@ Open a PR so GitHub has seen the statuses, then in **Settings → Branches** (or
 
 ## 7. Check your setup
 
-**Manage Jenkins → Applitools setup**: the **GitHub with a token** row shows whether GitHub accepted the last call, and how many builds report this way. The keys rows should be ✅ before your first PR build.
+**Manage Jenkins → Applitools setup → Run checks**: the **GitHub with a token** row shows whether GitHub accepted the last call, and how many builds report this way. The keys rows should be ✅ before your first PR build.
 
 ## 8. Try it
 

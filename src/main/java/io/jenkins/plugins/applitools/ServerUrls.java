@@ -13,7 +13,8 @@ import java.util.Set;
 /**
  * Checks the URLs the plugin sends keys and tokens to (the Eyes server, the GitHub API). A Jenkinsfile can set both,
  * and the requests come from the controller, so they must not reach addresses only the controller can: link-local
- * addresses and cloud metadata services in particular.
+ * addresses and cloud metadata services in particular. Keys also aren't sent over plain http to other machines
+ * unless an admin allows it.
  */
 public final class ServerUrls {
 
@@ -60,7 +61,34 @@ public final class ServerUrls {
             throw new RefusedUrlException(what + " points at a reserved address (" + host
                     + "), such as a cloud metadata service. Use your Eyes server's or GitHub's address.");
         }
+        if (scheme.equals("http") && !isLoopback(host) && !httpAllowed()) {
+            throw new RefusedUrlException(what + " must use https:// so keys aren't sent unencrypted: " + url
+                    + ". (An admin can allow http:// under Manage Jenkins → System → Applitools Eyes → Advanced.)");
+        }
         return url;
+    }
+
+    private static boolean httpAllowed() {
+        return jenkins.model.Jenkins.getInstanceOrNull() != null
+                && ApplitoolsGlobalConfiguration.get().isAllowHttp();
+    }
+
+    /** Plain http to this machine never crosses the network. */
+    private static boolean isLoopback(String host) {
+        String bare = host.startsWith("[") && host.endsWith("]") ? host.substring(1, host.length() - 1) : host;
+        if (bare.equalsIgnoreCase("localhost")) {
+            return true;
+        }
+        try {
+            for (InetAddress address : InetAddress.getAllByName(bare)) {
+                if (!address.isLoopbackAddress()) {
+                    return false;
+                }
+            }
+            return true;
+        } catch (UnknownHostException e) {
+            return false;
+        }
     }
 
     private static boolean isReserved(String host) {

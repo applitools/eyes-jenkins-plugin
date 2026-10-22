@@ -443,6 +443,17 @@ public class ApplitoolsBuildWrapper extends SimpleBuildWrapper {
                         expand(initialEnvironment, commit),
                         expand(initialEnvironment, branch),
                         expand(initialEnvironment, targetBranch));
+        String fork = forkOf(initialEnvironment);
+        if (fork != null) {
+            if (!ApplitoolsGlobalConfiguration.get().isAllowForkPullRequests()) {
+                throw new AbortException(LOG_PREFIX + "This pull request comes from a fork (" + fork + "). Its code"
+                        + " isn't trusted, so it doesn't get your Eyes API key and its visual tests don't run. To run"
+                        + " them anyway, an admin can tick \"Run visual tests on pull requests from forks\" under"
+                        + " Manage Jenkins → System → Applitools Eyes → Advanced.");
+            }
+            log.println(LOG_PREFIX + "Pull request from a fork (" + fork + "); allowed by Manage Jenkins → System."
+                    + " Its baselines get their own Eyes branch.");
+        }
         if (githubCredentialsId != null) {
             if (io.jenkins.plugins.applitools.scm.GitHubRestClient.token(build, githubCredentialsId) == null) {
                 log.println(LOG_PREFIX + "WARNING: githubCredentialsId '" + githubCredentialsId + "' doesn't match a"
@@ -471,7 +482,8 @@ public class ApplitoolsBuildWrapper extends SimpleBuildWrapper {
                         expand(initialEnvironment, batchId),
                         expand(initialEnvironment, batchName),
                         expand(initialEnvironment, branchName),
-                        expand(initialEnvironment, parentBranchName)));
+                        expand(initialEnvironment, parentBranchName)),
+                fork != null);
 
         context.env(ENV_API_KEY, apiKey);
         context.env(ENV_SERVER_URL, server);
@@ -496,11 +508,16 @@ public class ApplitoolsBuildWrapper extends SimpleBuildWrapper {
                     + (batch.parentBranchName() != null ? " ← baseline from " + batch.parentBranchName() : ""));
         }
         log.println(LOG_PREFIX + "Server " + server + ", API key from credential '" + credId + "'");
-        if (isChecks()) {
+        boolean locked = ApplitoolsGlobalConfiguration.get().isLockDesignReview();
+        boolean postChecks = isChecks() || locked;
+        if (!isChecks() && locked) {
+            log.println(LOG_PREFIX + "checks: false ignored: design review is locked in Manage Jenkins → System");
+        }
+        if (postChecks) {
             VisualTestsCheck.started(build, listener, batch.batchName());
         }
 
-        DesignSettings design = isChecks() ? designSettings(build, scm, initialEnvironment, log) : null;
+        DesignSettings design = postChecks ? designSettings(build, scm, initialEnvironment, log) : null;
         if (design != null) {
             DesignReview.started(build, listener); // clear the previous build's verdict right away
         }
@@ -517,10 +534,33 @@ public class ApplitoolsBuildWrapper extends SimpleBuildWrapper {
                 waitForResults,
                 resultsTimeout,
                 onChanges,
-                isChecks(),
+                postChecks,
                 design,
                 expectations(),
-                mergeBaselines));
+                mergeBaselines,
+                batch.branchName()));
+    }
+
+    /**
+     * The fork a pull request comes from, or {@code null} if it isn't from a fork (or that can't be told). Multibranch
+     * jobs set {@code CHANGE_FORK}; GitHub Pull Request Builder gives the author's repository.
+     */
+    @CheckForNull
+    static String forkOf(@NonNull EnvVars env) {
+        String fork = Util.fixEmptyAndTrim(env.get("CHANGE_FORK"));
+        if (fork != null) {
+            return fork;
+        }
+        String authorRepo = Util.fixEmptyAndTrim(env.get("ghprbAuthorRepoGitUrl"));
+        String baseRepo = Util.fixEmptyAndTrim(env.get("ghprbGhRepository"));
+        if (authorRepo != null && baseRepo != null) {
+            String author = authorRepo.toLowerCase(java.util.Locale.ROOT).replaceFirst("\\.git$", "");
+            if (!author.endsWith("/" + baseRepo.toLowerCase(java.util.Locale.ROOT))
+                    && !author.endsWith(":" + baseRepo.toLowerCase(java.util.Locale.ROOT))) {
+                return authorRepo;
+            }
+        }
+        return null;
     }
 
     @Override
@@ -537,14 +577,25 @@ public class ApplitoolsBuildWrapper extends SimpleBuildWrapper {
         if (forced == null && fromEnv != null) {
             forced = Boolean.parseBoolean(fromEnv);
         }
+        // Locked: the Jenkinsfile can require design review, but not turn it off or change who approves.
+        boolean locked = global.isLockDesignReview();
+        if (locked && (Boolean.FALSE.equals(forced) || designers != null || designReviewLabel != null)) {
+            log.println(LOG_PREFIX + "Design review is locked in Manage Jenkins → System; ignoring the Jenkinsfile's"
+                    + " designReview: false, designers and designReviewLabel");
+            if (Boolean.FALSE.equals(forced)) {
+                forced = null;
+            }
+        }
         if (!global.isDesignReviewCheck() && !Boolean.TRUE.equals(forced)) {
             return null;
         }
+        String label = designReviewLabel != null && !locked ? designReviewLabel : global.getDesignReviewLabel();
+        String who = designers != null && !locked ? designers : global.getDesigners();
         return new DesignSettings(
                 forced,
                 global.isDesignReviewByDefault(),
-                designReviewLabel != null ? designReviewLabel : global.getDesignReviewLabel(),
-                ApplitoolsGlobalConfiguration.parseDesigners(designers != null ? designers : global.getDesigners()),
+                label,
+                ApplitoolsGlobalConfiguration.parseDesigners(who),
                 build.getParent().getFullName(),
                 build.getNumber(),
                 scm.owner(),
@@ -632,6 +683,9 @@ public class ApplitoolsBuildWrapper extends SimpleBuildWrapper {
         private final Expectations expectations;
         @CheckForNull
         private final Boolean mergeBaselinesSetting;
+        /** The Eyes branch the tests ran on; merged into the target branch when the PR merges. */
+        @CheckForNull
+        private final String eyesBranch;
 
         /** Results, or why there are none (for the check's summary). */
         private record Collected(@CheckForNull BatchResults results, @CheckForNull String problem) {}
@@ -649,7 +703,9 @@ public class ApplitoolsBuildWrapper extends SimpleBuildWrapper {
                 boolean checks,
                 @CheckForNull DesignSettings design,
                 Expectations expectations,
-                @CheckForNull Boolean mergeBaselinesSetting) {
+                @CheckForNull Boolean mergeBaselinesSetting,
+                @CheckForNull String eyesBranch) {
+            this.eyesBranch = eyesBranch;
             this.serverUrl = serverUrl;
             this.credentialsId = credentialsId;
             this.readCredentialsId = readCredentialsId;
@@ -756,6 +812,7 @@ public class ApplitoolsBuildWrapper extends SimpleBuildWrapper {
                     labelPresent);
             review.setExpectations(expectations);
             review.setMergeBaselines(mergeBaselinesSetting);
+            review.setEyesBranch(eyesBranch);
             GitHubConnectionAction github = build.getAction(GitHubConnectionAction.class);
             if (github != null) {
                 review.setGitHubConnection(github.getApiUrl(), github.getCredentialsId());

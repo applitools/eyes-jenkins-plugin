@@ -95,18 +95,26 @@ final class DesignReview {
                 approvedBy.addAll(designerApprovals);
             }
         }
+        boolean hide = hideReviewers();
         if (approvedBy.isEmpty() || !notByDesigner.isEmpty()) {
             Set<String> others = new TreeSet<>(notByDesigner);
             return new Verdict(
                     State.WAITING,
                     "Waiting for a designer",
                     "Changes were accepted"
-                            + (others.isEmpty() ? "" : " by " + String.join(", ", others))
-                            + ", but a designer (" + designers.describe() + ") must approve them."
+                            + (others.isEmpty() || hide ? "" : " by " + String.join(", ", others))
+                            + ", but a designer" + (hide ? "" : " (" + designers.describe() + ")")
+                            + " must approve them."
                             + (designers.getProblem() != null ? " Note: " + designers.getProblem() + "." : ""));
         }
-        return new Verdict(State.APPROVED, "Approved by " + String.join(", ", approvedBy),
+        return new Verdict(State.APPROVED, hide ? "Approved by a designer" : "Approved by " + String.join(", ", approvedBy),
                 "Every visual change was accepted by a designer.");
+    }
+
+    /** Reviewers are Eyes login emails; on public repositories admins may not want them on pull requests. */
+    private static boolean hideReviewers() {
+        return jenkins.model.Jenkins.getInstanceOrNull() != null
+                && ApplitoolsGlobalConfiguration.get().isHideReviewers();
     }
 
     /**

@@ -48,6 +48,9 @@
       <f:entry field="designReviewByDefault">
         <f:checkbox title="Require design review on every pull request, not just labeled ones" />
       </f:entry>
+      <f:entry field="lockDesignReview">
+        <f:checkbox title="Jenkinsfiles can't loosen design review (turn it off, choose designers, change the label)" />
+      </f:entry>
     </f:section>
 
     <f:section title="Baselines">
@@ -59,6 +62,18 @@
     <f:advanced title="Advanced">
       <f:entry field="followBranchBuilds">
         <f:checkbox title="Keep updating results for branch builds (not just pull requests) after they finish" />
+      </f:entry>
+      <f:entry field="hideReviewers">
+        <f:checkbox title="Don't name reviewers in pull request results (their Eyes login emails), e.g. for public repositories" />
+      </f:entry>
+      <f:entry field="allowForkPullRequests">
+        <f:checkbox title="Run visual tests on pull requests from forks (their code gets the Eyes run key)" />
+      </f:entry>
+      <f:entry field="allowHttp">
+        <f:checkbox title="Allow http:// Eyes and GitHub URLs on other machines (keys travel unencrypted)" />
+      </f:entry>
+      <f:entry field="apiKeyInQuery">
+        <f:checkbox title="Older on-premises Eyes: retry closing batches with the run key in the URL" />
       </f:entry>
     </f:advanced>
   </f:section>

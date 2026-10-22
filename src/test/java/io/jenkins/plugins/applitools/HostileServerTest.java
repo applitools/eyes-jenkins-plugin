@@ -41,16 +41,19 @@ class HostileServerTest {
     private volatile byte[] body = new byte[0];
     private volatile boolean gzip;
     private volatile String contentType = "text/html";
+    private volatile int status = 200;
+    private final java.util.List<String> requests = new java.util.concurrent.CopyOnWriteArrayList<>();
 
     @BeforeEach
     void setUp() throws IOException {
         server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
         server.createContext("/", exchange -> {
+            requests.add(exchange.getRequestMethod() + " " + exchange.getRequestURI());
             exchange.getResponseHeaders().add("Content-Type", contentType);
             if (gzip) {
                 exchange.getResponseHeaders().add("Content-Encoding", "gzip");
             }
-            exchange.sendResponseHeaders(200, body.length);
+            exchange.sendResponseHeaders(status, body.length == 0 ? -1 : body.length);
             exchange.getResponseBody().write(body);
             exchange.close();
         });
@@ -103,6 +106,20 @@ class HostileServerTest {
 
         IOException e = assertThrows(IOException.class, () -> new EyesClient(url(), "key").getResults("b1"));
         assertThat(rootMessage(e), containsString("larger than 1 MB"));
+    }
+
+    @Test
+    void apiKeyGoesInTheUrlOnlyWhenAllowed(JenkinsRule j) {
+        status = 401;
+        assertThrows(IOException.class, () -> new EyesClient(url(), "key-in-url-123").closeBatch("b1"));
+        assertThat(requests.size(), is(1));
+        assertThat(requests.get(0), not(containsString("key-in-url-123")));
+
+        requests.clear();
+        ApplitoolsGlobalConfiguration.get().setApiKeyInQuery(true);
+        assertThrows(IOException.class, () -> new EyesClient(url(), "key-in-url-123").closeBatch("b1"));
+        assertThat(requests.size(), is(2));
+        assertThat(requests.get(1), containsString("apiKey=key-in-url-123"));
     }
 
     @Test

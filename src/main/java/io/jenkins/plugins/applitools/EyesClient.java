@@ -27,6 +27,11 @@ public class EyesClient {
         this.apiKey = apiKey;
     }
 
+    private static boolean apiKeyInQueryAllowed() {
+        return jenkins.model.Jenkins.getInstanceOrNull() != null
+                && ApplitoolsGlobalConfiguration.get().isApiKeyInQuery();
+    }
+
     /** Identifies server + key for caches, without keeping the key itself. */
     String cacheKey() {
         return serverUrl + "|" + Integer.toHexString(apiKey.hashCode());
@@ -46,8 +51,9 @@ public class EyesClient {
     public CloseResult closeBatch(@NonNull String batchId) throws IOException, InterruptedException {
         String path = "/api/sessions/batches/" + encode(batchId) + "/close/bypointerid";
         HttpResponse<String> response = send(HttpRequest.newBuilder(uri(path)).DELETE());
-        if (response.statusCode() == 401) {
-            // Older or on-prem servers may only accept the key as a query parameter on this endpoint.
+        if (response.statusCode() == 401 && apiKeyInQueryAllowed()) {
+            // Older or on-prem servers may only accept the key as a query parameter on this endpoint. Opt-in: URL
+            // parameters end up in proxy and server logs.
             response = sendWithoutHeader(HttpRequest.newBuilder(uri(path + "?apiKey=" + encode(apiKey))).DELETE());
         }
         if (response.statusCode() == 404) {

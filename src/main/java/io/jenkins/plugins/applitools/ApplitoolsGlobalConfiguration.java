@@ -43,6 +43,11 @@ public class ApplitoolsGlobalConfiguration extends GlobalConfiguration {
     private Boolean mergeBaselines;
     private boolean followBranchBuilds;
     private String mergeCredentialsId;
+    private boolean allowForkPullRequests;
+    private boolean allowHttp;
+    private boolean apiKeyInQuery;
+    private boolean hideReviewers;
+    private boolean lockDesignReview;
 
     public static ApplitoolsGlobalConfiguration get() {
         return GlobalConfiguration.all().getInstance(ApplitoolsGlobalConfiguration.class);
@@ -166,6 +171,70 @@ public class ApplitoolsGlobalConfiguration extends GlobalConfiguration {
     @DataBoundSetter
     public void setFollowBranchBuilds(boolean followBranchBuilds) {
         this.followBranchBuilds = followBranchBuilds;
+        save();
+    }
+
+    /**
+     * Run the {@code applitools} step for pull requests from forks. Off by default: a fork's test code is untrusted
+     * and would receive the Eyes API key.
+     */
+    public boolean isAllowForkPullRequests() {
+        return allowForkPullRequests;
+    }
+
+    @DataBoundSetter
+    public void setAllowForkPullRequests(boolean allowForkPullRequests) {
+        this.allowForkPullRequests = allowForkPullRequests;
+        save();
+    }
+
+    /** Allow plain {@code http://} Eyes and GitHub URLs on other machines; keys would cross the network unencrypted. */
+    public boolean isAllowHttp() {
+        return allowHttp;
+    }
+
+    @DataBoundSetter
+    public void setAllowHttp(boolean allowHttp) {
+        this.allowHttp = allowHttp;
+        save();
+    }
+
+    /**
+     * Retry closing a batch with the key as a URL parameter when the server rejects the header (some older on-premises
+     * Eyes servers). Off by default: URL parameters end up in proxy and server logs.
+     */
+    public boolean isApiKeyInQuery() {
+        return apiKeyInQuery;
+    }
+
+    @DataBoundSetter
+    public void setApiKeyInQuery(boolean apiKeyInQuery) {
+        this.apiKeyInQuery = apiKeyInQuery;
+        save();
+    }
+
+    /** Don't name reviewers (their Eyes login emails) in pull request results; useful for public repositories. */
+    public boolean isHideReviewers() {
+        return hideReviewers;
+    }
+
+    @DataBoundSetter
+    public void setHideReviewers(boolean hideReviewers) {
+        this.hideReviewers = hideReviewers;
+        save();
+    }
+
+    /**
+     * Ignore Jenkinsfile settings that would loosen design review: turning it off, choosing designers, changing the
+     * label, or not posting PR results. Lets the gate hold against people who can edit the Jenkinsfile.
+     */
+    public boolean isLockDesignReview() {
+        return lockDesignReview;
+    }
+
+    @DataBoundSetter
+    public void setLockDesignReview(boolean lockDesignReview) {
+        this.lockDesignReview = lockDesignReview;
         save();
     }
 

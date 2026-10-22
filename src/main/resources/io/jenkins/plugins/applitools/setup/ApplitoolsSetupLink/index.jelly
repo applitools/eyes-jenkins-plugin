@@ -1,32 +1,36 @@
 <?jelly escape-by-default='true'?>
-<j:jelly xmlns:j="jelly:core" xmlns:l="/lib/layout">
+<j:jelly xmlns:j="jelly:core" xmlns:l="/lib/layout" xmlns:f="/lib/form">
   <l:layout title="Applitools setup" permission="${app.ADMINISTER}">
     <l:main-panel>
-      <l:app-bar title="Applitools setup">
-        <a href="." class="jenkins-button">Check again</a>
-      </l:app-bar>
+      <j:set var="items" value="${request2.getAttribute('items')}"/>
+      <l:app-bar title="Applitools setup"/>
       <p class="jenkins-description">
         Each row checks one piece of the setup, live. Keys are validated against Eyes with requests that change nothing.
       </p>
-      <table class="jenkins-table" id="applitools-setup">
-        <thead>
-          <tr><th class="jenkins-table__cell--tight"/><th>Check</th><th>Found</th><th>How to fix</th></tr>
-        </thead>
-        <tbody>
-          <j:forEach var="item" items="${it.items}">
-            <tr data-status="${item.status}">
-              <td class="jenkins-table__cell--tight">
-                <span style="color: var(${item.color})" title="${item.status}">
-                  <l:icon src="${item.icon}" class="icon-md"/>
-                </span>
-              </td>
-              <td><strong>${item.title}</strong></td>
-              <td>${item.detail}</td>
-              <td>${item.fix}</td>
-            </tr>
-          </j:forEach>
-        </tbody>
-      </table>
+      <f:form method="post" action="run" name="run">
+        <f:submit value="${items == null ? 'Run checks' : 'Check again'}"/>
+      </f:form>
+      <j:if test="${items != null}">
+        <table class="jenkins-table jenkins-!-margin-top-3" id="applitools-setup">
+          <thead>
+            <tr><th class="jenkins-table__cell--tight"/><th>Check</th><th>Found</th><th>How to fix</th></tr>
+          </thead>
+          <tbody>
+            <j:forEach var="item" items="${items}">
+              <tr data-status="${item.status}">
+                <td class="jenkins-table__cell--tight">
+                  <span style="color: var(${item.color})" title="${item.status}">
+                    <l:icon src="${item.icon}" class="icon-md"/>
+                  </span>
+                </td>
+                <td><strong>${item.title}</strong></td>
+                <td>${item.detail}</td>
+                <td>${item.fix}</td>
+              </tr>
+            </j:forEach>
+          </tbody>
+        </table>
+      </j:if>
     </l:main-panel>
   </l:layout>
 </j:jelly>

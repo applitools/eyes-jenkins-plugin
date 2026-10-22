@@ -122,8 +122,22 @@ final class VisualTestsCheck {
     }
 
     /** Keeps names from breaking the markdown table. */
-    private static String escape(@CheckForNull String text) {
-        return text == null ? "" : text.replace("|", "\\|").replace("\n", " ");
+    /**
+     * Test names, batch names and environments come from test code, which a PR author controls: show them as plain
+     * text, not Markdown (no links, images or formatting), on one table row.
+     */
+    static String escape(@CheckForNull String text) {
+        if (text == null) {
+            return "";
+        }
+        StringBuilder out = new StringBuilder(text.length());
+        for (char c : text.replace('\r', ' ').replace('\n', ' ').toCharArray()) {
+            if ("\\`*_[]<>!|~&#".indexOf(c) >= 0) { // what makes links, images, formatting or HTML
+                out.append('\\');
+            }
+            out.append(c);
+        }
+        return out.toString();
     }
 
     static LocalDateTime now() {

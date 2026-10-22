@@ -43,6 +43,11 @@ class ConfigurationAsCodeTest {
         assertThat(config.isDesignReviewByDefault(), is(true));
         assertThat(config.isMergeBaselines(), is(false));
         assertThat(config.isFollowBranchBuilds(), is(true));
+        assertThat(config.isAllowForkPullRequests(), is(true));
+        assertThat(config.isAllowHttp(), is(true));
+        assertThat(config.isApiKeyInQuery(), is(true));
+        assertThat(config.isHideReviewers(), is(true));
+        assertThat(config.isLockDesignReview(), is(true));
 
         // ...and what the snippet sets up around it.
         List<StringCredentials> secrets = CredentialsProvider.lookupCredentialsInItemGroup(
@@ -84,6 +89,11 @@ class ConfigurationAsCodeTest {
         assertThat(config.isDesignReviewCheck(), is(true));
         assertThat(config.isMergeBaselines(), is(true));
         assertThat(config.getDesigners(), is("team:Design"));
+        // Security settings default to the safe choice.
+        assertThat(config.isAllowForkPullRequests(), is(false));
+        assertThat(config.isAllowHttp(), is(false));
+        assertThat(config.isApiKeyInQuery(), is(false));
+        assertThat(config.isLockDesignReview(), is(false));
 
         assertThat(export(), not(containsString("readCredentialsId")));
     }

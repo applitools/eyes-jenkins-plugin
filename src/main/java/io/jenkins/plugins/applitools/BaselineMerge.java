@@ -45,7 +45,8 @@ public final class BaselineMerge {
         if (slug == null) {
             return true; // not a PR we can map to Eyes branches; nothing to retry
         }
-        String source = slug + "/" + headRef;
+        // The branch recorded at build time: right for forks (owner/repo/pr-N) and for a step's own branchName.
+        String source = review.getEyesBranch() != null ? review.getEyesBranch() : slug + "/" + headRef;
         String target = slug + "/" + baseRef;
         String key = mergeKey(run, review);
         if (key == null) {
