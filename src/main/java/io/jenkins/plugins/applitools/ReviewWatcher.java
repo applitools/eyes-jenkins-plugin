@@ -53,6 +53,9 @@ public class ReviewWatcher extends AsyncPeriodicWork {
                     registry.remove(review);
                     continue;
                 }
+                if (reconcile(review, registry, listener)) {
+                    continue; // no longer followed
+                }
                 long now = System.currentTimeMillis();
                 if (review.needsPullPolling() && now >= review.nextPullPollAt(now)) {
                     if (now - start > budgetMillis()) {
@@ -62,8 +65,12 @@ public class ReviewWatcher extends AsyncPeriodicWork {
                         continue; // the PR closed: ReviewEvents took over (merge, then stop following)
                     }
                 }
-                if (review.isSettled() || now < review.nextPollAt(now)) {
-                    continue; // settled open PR (kept for labels and its merge), or not due yet
+                boolean recheckSettledPr = review.isSettled() && review.isPullRequest() && !review.isClosed()
+                        && now >= review.getLastPolledAt() + 30 * PendingReview.minPollMillisPublic();
+                if ((review.isSettled() && !recheckSettledPr) || (!review.isSettled() && now < review.nextPollAt(now))) {
+                    // Settled open PRs are re-read every 30 minutes, so a reviewer who changes their mind in Eyes
+                    // (e.g. accepts after rejecting) still updates the PR; otherwise only label/merge events matter.
+                    continue;
                 }
                 if (now - start > budgetMillis()) {
                     break; // out of time this pass; the least recently polled go first next time
@@ -91,6 +98,59 @@ public class ReviewWatcher extends AsyncPeriodicWork {
                 registry.saveQuietly();
             }
         }
+    }
+
+    /**
+     * Keeps the list honest without any network calls in the common case. Stops following a review when its build was
+     * deleted, its job is gone or disabled (Jenkins disables jobs for deleted branches and closed PRs), its job has a
+     * newer finished build, or it's a branch build and branch builds aren't followed. Before dropping a PR whose job
+     * went away, asks GitHub whether it merged, so a missed "closed" webhook can't skip the baseline merge.
+     *
+     * @return true if the review is no longer followed
+     */
+    static boolean reconcile(PendingReview review, ReviewRegistry registry, TaskListener listener) {
+        if (!review.isPullRequest()
+                && !io.jenkins.plugins.applitools.ApplitoolsGlobalConfiguration.get().isFollowBranchBuilds()) {
+            registry.remove(review);
+            return true;
+        }
+        Job<?, ?> job = Jenkins.get().getItemByFullName(review.getJobFullName(), Job.class);
+        Run<?, ?> run = job != null ? job.getBuildByNumber(review.getBuildNumber()) : null;
+        if (run == null) {
+            registry.remove(review);
+            return true;
+        }
+        Run<?, ?> lastFinished = job.getLastCompletedBuild();
+        boolean superseded = lastFinished != null && lastFinished.getNumber() > review.getBuildNumber();
+        boolean gone = !job.isBuildable();
+        if (!superseded && !gone) {
+            return false;
+        }
+        if (gone && review.isPullRequest() && !review.isClosed()) {
+            String slug = review.getRepoSlug();
+            String number = review.getChangeId();
+            try {
+                GitHubRestClient.PullState pr = slug != null && number != null
+                        ? io.jenkins.plugins.applitools.scm.PullRequestStates.of(run, slug, number)
+                        : null;
+                if (pr != null && pr.merged()) {
+                    // The webhook was missed (or Jenkins was down): merge now, as the event would have.
+                    ReviewEvents.closed(slug, number, true, pr.headRef(), pr.baseRef());
+                    return true;
+                }
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                return false;
+            } catch (Exception e) {
+                listener.getLogger().println("Could not check whether " + slug + "#" + number + " merged: " + e);
+                return false; // try again next pass rather than risk skipping a merge
+            }
+        }
+        if (review.isClosed()) {
+            return false; // merged PR waiting for its baseline merge to succeed
+        }
+        registry.remove(review);
+        return true;
     }
 
     /**

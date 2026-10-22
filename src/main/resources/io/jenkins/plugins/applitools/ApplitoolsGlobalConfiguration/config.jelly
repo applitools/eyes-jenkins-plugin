@@ -25,6 +25,9 @@
     <f:entry field="designReviewByDefault">
       <f:checkbox title="Require design review on every pull request, not just labeled ones" />
     </f:entry>
+    <f:entry field="followBranchBuilds">
+      <f:checkbox title="Keep updating results for branch builds (not just pull requests) after they finish" />
+    </f:entry>
     <f:entry field="mergeBaselines">
       <f:checkbox title="Merge a pull request's Eyes baselines into its target branch when it merges" default="true" />
     </f:entry>

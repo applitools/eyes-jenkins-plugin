@@ -80,6 +80,14 @@ public class ReviewRegistry implements Saveable {
         saveQuietly();
     }
 
+    /** Stops following any build of this job. */
+    public synchronized void forget(@NonNull String jobFullName) {
+        ensureLoaded();
+        if (reviews.removeIf(r -> r.getJobFullName().equals(jobFullName))) {
+            saveQuietly();
+        }
+    }
+
     public synchronized void remove(@NonNull PendingReview review) {
         ensureLoaded();
         if (reviews.remove(review)) {

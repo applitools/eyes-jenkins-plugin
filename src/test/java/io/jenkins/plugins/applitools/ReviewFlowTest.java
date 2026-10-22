@@ -52,6 +52,8 @@ public class ReviewFlowTest {
         PUBLISHER.getPublishedChecks().clear();
         eyes = new FakeEyesServer();
         ApplitoolsGlobalConfiguration.get().setServerUrl(eyes.url());
+        // Plain test pipelines aren't PRs; follow them like PR builds so the review flow can be exercised.
+        ApplitoolsGlobalConfiguration.get().setFollowBranchBuilds(true);
         SystemCredentialsProvider.getInstance()
                 .getCredentials()
                 .add(new StringCredentialsImpl(

@@ -41,6 +41,7 @@ public class ApplitoolsGlobalConfiguration extends GlobalConfiguration {
 
     private CommitStatusPublisher.Mode githubReporting;
     private Boolean mergeBaselines;
+    private boolean followBranchBuilds;
     private String mergeCredentialsId;
 
     public static ApplitoolsGlobalConfiguration get() {
@@ -151,6 +152,20 @@ public class ApplitoolsGlobalConfiguration extends GlobalConfiguration {
     @DataBoundSetter
     public void setMergeBaselines(boolean mergeBaselines) {
         this.mergeBaselines = mergeBaselines;
+        save();
+    }
+
+    /**
+     * Keep updating results for branch builds (e.g. main) after they finish. Off by default: nobody reviews branch
+     * builds, so following them only holds onto results that never settle. PR builds are always followed.
+     */
+    public boolean isFollowBranchBuilds() {
+        return followBranchBuilds;
+    }
+
+    @DataBoundSetter
+    public void setFollowBranchBuilds(boolean followBranchBuilds) {
+        this.followBranchBuilds = followBranchBuilds;
         save();
     }
 

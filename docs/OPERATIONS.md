@@ -24,9 +24,10 @@ What the plugin costs a Jenkins controller in memory, threads, network and disk,
 
 ### Which builds the watcher follows
 
-- **Only builds with visual changes awaiting review.** A build that passed, or whose changes were all reviewed, isn't followed. The exception is an open PR: it's kept, *without polling*, so label changes and its merge still work.
+- **Only pull request builds,** and only while they can still change. Branch builds (e.g. `main`) post their results when the build ends and aren't followed afterwards: nobody reviews them, so following them would hold results that never settle. (Opt in with **Keep updating results for branch builds** in Manage Jenkins → System.)
+- **An open PR stays followed even when fully reviewed,** so label changes, its merge, and a reviewer changing their mind in Eyes still update it. Fully reviewed PRs are re-read from Eyes only every 30 minutes.
 - **One per job.** A new build of a PR or branch replaces the older one.
-- **Dropped automatically:** when the PR closes, when its baseline merge succeeds, when its build is deleted, or after **14 days**.
+- **Dropped automatically,** checked on every pass without network calls: when its build is deleted, when its job is gone or disabled (Jenkins disables the jobs of closed PRs and deleted branches), when its job has a newer finished build, when the PR closes, or after **14 days**. Before dropping a closed PR, the plugin asks GitHub whether it **merged**; if so, it runs the baseline merge the missed webhook would have run.
 - **At most 500.** Beyond that, the longest-followed are dropped (and a warning is logged).
 
 ## How polling is bounded

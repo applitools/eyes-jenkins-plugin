@@ -48,6 +48,8 @@ public class BaselineMergeTest {
         PUBLISHER.getPublishedChecks().clear();
         eyes = new FakeEyesServer();
         ApplitoolsGlobalConfiguration.get().setServerUrl(eyes.url());
+        // Plain test pipelines aren't PRs; follow them like PR builds so the review flow can be exercised.
+        ApplitoolsGlobalConfiguration.get().setFollowBranchBuilds(true);
         addSecret(ApplitoolsGlobalConfiguration.DEFAULT_CREDENTIALS_ID, "run-key-0123456789");
         // Unreviewed changes, so the (non-PR) test build is followed and can be turned into a PR below.
         eyes.results("b1", List.of(new FakeTest("s1", "unresolved")));

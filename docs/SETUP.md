@@ -207,7 +207,7 @@ Don't require `Applitools / Baseline merge`: it only appears after a pull reques
 4. **Click Details** on either check. It opens the batch in Eyes. Accept the changes and **save**.
 5. Within a minute, both checks turn ✅. With designers set, Design review reads *Approved by …*, and only a designer's approval counts: someone in the Eyes team, or listed by email.
 
-Rejecting a change in Eyes turns both checks ❌.
+**Rejecting** a change in Eyes turns both checks ❌ (*"N of M failed"*, *"Changes requested"*) and keeps the merge blocked; the Jenkins build itself doesn't change. Rejecting doesn't alter the baseline, so push a fix and the next build is compared against the same baseline. If a reviewer changes their mind and accepts instead, the checks follow within 30 minutes.
 
 6. **Merge the pull request.** Within a minute or two, **Applitools / Baseline merge** appears on it: ✅ *Baselines merged into main*. The next build of `main` compares against the changes you accepted.
 

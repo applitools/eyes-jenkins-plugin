@@ -51,6 +51,8 @@ public class EyesTeamDesignersTest {
         eyes.teams.put("Design", List.of("dana@example.com", "lee@example.com"));
         eyes.teams.put("Engineering", List.of("dev@example.com"));
         ApplitoolsGlobalConfiguration.get().setServerUrl(eyes.url());
+        // Plain test pipelines aren't PRs; follow them like PR builds so the review flow can be exercised.
+        ApplitoolsGlobalConfiguration.get().setFollowBranchBuilds(true);
         SystemCredentialsProvider.getInstance()
                 .getCredentials()
                 .add(new StringCredentialsImpl(

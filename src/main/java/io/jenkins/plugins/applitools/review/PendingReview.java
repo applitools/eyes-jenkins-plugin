@@ -214,6 +214,10 @@ public class PendingReview {
         return lastPolledAt + interval;
     }
 
+    public static long minPollMillisPublic() {
+        return minPollMillis();
+    }
+
     /** The base polling interval (one minute); tests lower it. */
     static long minPollMillis() {
         return Long.getLong(PendingReview.class.getName() + ".minPollSeconds", 60) * 1000;

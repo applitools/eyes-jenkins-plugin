@@ -760,7 +760,11 @@ public class ApplitoolsBuildWrapper extends SimpleBuildWrapper {
             } catch (IOException e) {
                 log.println(LOG_PREFIX + "WARNING: could not evaluate design review: " + e.getMessage());
             }
-            ReviewRegistry.get().register(review);
+            if (review.isPullRequest() || ApplitoolsGlobalConfiguration.get().isFollowBranchBuilds()) {
+                ReviewRegistry.get().register(review);
+            } else {
+                ReviewRegistry.get().forget(review.getJobFullName()); // an older build of this branch, if any
+            }
         }
 
         /** Client for reading results: the read key if there is one, else the run key. */
