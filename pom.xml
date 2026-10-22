@@ -95,6 +95,17 @@
       <artifactId>test-harness</artifactId>
       <scope>test</scope>
     </dependency>
+    <!-- Test-only: the documented from-scratch jenkins.yaml creates its jobs with Job DSL. -->
+    <dependency>
+      <groupId>org.jenkins-ci.plugins</groupId>
+      <artifactId>job-dsl</artifactId>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.jenkins-ci.plugins.workflow</groupId>
+      <artifactId>workflow-multibranch</artifactId>
+      <scope>test</scope>
+    </dependency>
     <!-- Test-only: lets JenkinsRule run Pipeline jobs that call our step. -->
     <dependency>
       <groupId>org.jenkins-ci.plugins.workflow</groupId>

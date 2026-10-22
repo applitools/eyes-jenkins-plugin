@@ -17,7 +17,11 @@ public class GitHubConnectionAction extends InvisibleAction {
     private final String pullRequest;
 
     public GitHubConnectionAction(
-            @CheckForNull String apiUrl, String credentialsId, String repo, String commit, @CheckForNull String pullRequest) {
+            @CheckForNull String apiUrl,
+            String credentialsId,
+            String repo,
+            String commit,
+            @CheckForNull String pullRequest) {
         this.apiUrl = apiUrl;
         this.credentialsId = credentialsId;
         this.repo = repo;

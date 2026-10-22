@@ -42,6 +42,7 @@ class ConfigurationAsCodeTest {
                 is(List.of("team:Tim's Eyes Org", "lead@example.com")));
         assertThat(config.isDesignReviewByDefault(), is(true));
         assertThat(config.isMergeBaselines(), is(false));
+        assertThat(config.isFollowBranchBuilds(), is(true));
 
         // ...and what the snippet sets up around it.
         List<StringCredentials> secrets = CredentialsProvider.lookupCredentialsInItemGroup(

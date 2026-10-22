@@ -14,7 +14,7 @@ Every pull request then gets two checks: **Applitools / Visual tests** and **App
 - **Design review on demand:** add the `design-review` label to a PR, and a designer has to approve its visual changes. Optionally, only listed designers count.
 - **Results in Jenkins too:** a summary on the build page and `applitoolsResults()` for your own logic. Changes awaiting review keep the build green; the Applitools PR results are the gate.
 
-**→ [Setup guide](docs/SETUP.md)** (recommended: multibranch + GitHub App, about 30 minutes) · **[Setup without multibranch](docs/SETUP-WITHOUT-MULTIBRANCH.md)** (any job type, just a token) · **[Resource usage and limits](docs/OPERATIONS.md)**
+**→ [Setup guide](docs/SETUP.md)** (recommended: multibranch + GitHub App, about 30 minutes) · **[Setup without multibranch](docs/SETUP-WITHOUT-MULTIBRANCH.md)** (any job type, just a token) · **[Configuration as Code](docs/CONFIGURATION-AS-CODE.md)** (the whole Jenkins side from one `jenkins.yaml`) · **[Resource usage and limits](docs/OPERATIONS.md)**
 
 ## Develop
 

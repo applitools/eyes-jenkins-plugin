@@ -15,14 +15,14 @@ When the pull request merges, the plugin merges its Eyes baselines into the targ
 
 Setup takes about 30 minutes. Do the steps in order.
 
-**Prefer configuration as code?** Steps 1, 3 and 4 fit in one `jenkins.yaml`: see [Set it all up with one file](#set-it-all-up-with-one-file-configuration-as-code).
+**Prefer configuration as code?** Steps 1, 3, 4 and 5 fit in one `jenkins.yaml`, with the admin user and the agent too: see [Configuration as Code](CONFIGURATION-AS-CODE.md).
 
 ## Before you start
 
 - [ ] **Jenkins 2.568 or newer** that GitHub can send webhooks to. If yours is on a laptop or behind a firewall, see [Local Jenkins: webhook relay](#local-jenkins-webhook-relay).
 - [ ] **Admin access to the GitHub repo** (to install a GitHub App and set branch protection).
 - [ ] **Applitools API keys:** a normal **run** key (uploads tests) and a **read** key (lets Jenkins read results). Create the read key in Eyes under **Admin → API Keys**. For merging baselines when a PR merges, you also need a **merge** key: in **Admin → API Keys**, create a key with the **merge** option. Merge keys are tied to both a team and a user, so every baseline merge is attributable. Run, read and write keys get refused.
-- [ ] **A Jenkins agent that can run your tests:** Node.js plus the browsers your tests need (for example, the official Playwright image).
+- [ ] **A Jenkins agent that can run your tests:** Node.js plus the browsers your tests need. The examples use an agent labeled `playwright`; see [Example agent](#example-agent-nodejs-and-playwright) to build one.
 
 ## 1. Install the Jenkins plugins
 
@@ -90,12 +90,14 @@ Delete the `.pem` files once the GitHub App credential tests OK.
 
 - **Jenkins Location → Jenkins URL:** the address people use to reach Jenkins.
 - **GitHub → Advanced → Shared secrets → Add →** `github-webhook-secret`. Jenkins then rejects webhooks that aren't signed by your App. Don't add a GitHub Server entry; the App manages its own webhook.
-- **Applitools Eyes** (grouped into Eyes server, API keys, Pull request results, Design review, Baselines):
-  - **Server URL:** leave the default unless you use a dedicated or on-prem Eyes.
-  - **API keys:** pick the run, read and merge key credentials (or leave read/merge empty to use the standard IDs from step 3).
-  - **Designers:** who may approve design reviews. Use an **Eyes team**, `team:Design`, and manage membership in Eyes (Admin → Teams), where designers already review. You can also list Eyes login emails, or mix both: `team:Design, lead@example.com`. Leave empty to let any reviewer approve.
-  - **Design review label:** defaults to `design-review`.
-  - **Merge a pull request's Eyes baselines into its target branch when it merges:** on by default.
+- **Applitools Eyes:**
+  - **Eyes server → Server URL:** leave the default unless you use a dedicated or on-prem Eyes.
+  - **API keys:** **Run key**, **Read key** and **Merge key**. Pick the credentials from step 3, or leave Read and Merge empty: they then use `applitools-read-api-key` and `applitools-merge-api-key` automatically.
+  - **Pull request results:** leave **Report to GitHub as** on *Automatic* (checks with a GitHub App, commit statuses with a token), and leave the Design review result on.
+  - **Design review → Designers:** who may approve design reviews. Use an **Eyes team**, `team:Design`, and manage membership in Eyes (Admin → Teams), where designers already review. You can also list Eyes login emails, or mix both: `team:Design, lead@example.com`. Leave empty to let any reviewer approve.
+  - **Design review → Label:** defaults to `design-review`. Tick **Require design review on every pull request** to skip the label.
+  - **Baselines:** merging a pull request's Eyes baselines into its target branch when it merges is on by default.
+  - **Advanced:** leave as is.
 
 Save.
 
@@ -280,74 +282,16 @@ Branch names follow Eyes' `owner/repo/branch` convention, so baselines line up w
 | Design review stays waiting after a designer accepted | The changes must be **saved** in Eyes, and the accepting user must be in a designers team (or listed by email). **Manage Jenkins → Applitools setup** shows exactly who counts. |
 | **Design review: "Designers couldn't be determined"** | An Eyes team in Designers wasn't found (check the spelling against Eyes → Admin → Teams), or the read key can't list teams. Nobody can approve until it's fixed. |
 
-## Set it all up with one file (Configuration as Code)
+## Configuration as Code
 
-With the [Configuration as Code](https://plugins.jenkins.io/configuration-as-code/) plugin, one `jenkins.yaml` replaces steps 1, 3 and 4: plugins, credentials, webhook signing, Jenkins URL and the Applitools settings. You still create the GitHub App (step 2) and the multibranch job (step 5), and set branch protection (step 8). The Applitools part of this file is covered by the plugin's tests.
-
-**1. Plugins.** In a Docker image, add these to `plugins.txt` (for `jenkins-plugin-cli`). Copy the Applitools `.hpi` into `$JENKINS_HOME/plugins/` until it's published.
-```
-configuration-as-code
-github-branch-source
-github-checks
-workflow-aggregator
-```
-
-**2. `jenkins.yaml`.** Secrets come from environment variables (`${VAR}`) or files (`${readFile:/run/secrets/name}`), so nothing sensitive goes in the file:
-
-```yaml
-credentials:
-  system:
-    domainCredentials:
-      - credentials:
-          - gitHubApp:
-              id: github-app
-              appID: "${GITHUB_APP_ID}"
-              privateKey: "${readFile:/run/secrets/github-app.pem}"   # converted with openssl pkcs8 (step 2)
-          - string:
-              scope: GLOBAL
-              id: github-webhook-secret
-              secret: "${GITHUB_WEBHOOK_SECRET}"
-          - string:
-              scope: GLOBAL
-              id: applitools-api-key
-              secret: "${APPLITOOLS_API_KEY}"        # run key
-          - string:
-              scope: GLOBAL
-              id: applitools-read-api-key
-              secret: "${APPLITOOLS_READ_KEY}"       # read key
-          - string:
-              scope: GLOBAL
-              id: applitools-merge-api-key
-              secret: "${APPLITOOLS_MERGE_KEY}"      # merge key (team + user)
-
-unclassified:
-  location:
-    url: "https://jenkins.example.com/"
-  gitHubPluginConfig:
-    hookSecretConfigs:
-      - credentialsId: github-webhook-secret
-  applitools:
-    designers: "team:Design"                       # Eyes team and/or emails; omit to let anyone approve
-    # The rest are the defaults. Keep only what you change.
-    serverUrl: "https://eyes.applitools.com"
-    githubReporting: AUTO                          # or CHECKS / STATUSES
-    designReviewLabel: "design-review"
-    designReviewByDefault: false                   # true: every PR needs design review
-    designReviewCheck: true
-    mergeBaselines: true
-```
-
-**3. Load it.** Point `CASC_JENKINS_CONFIG` at the file and restart Jenkins, or use **Manage Jenkins → Configuration as Code → Reload existing configuration**.
-
-**4. Check it.** Open **Manage Jenkins → Applitools setup**.
-
-To capture an existing, hand-configured Jenkins as YAML, use **Manage Jenkins → Configuration as Code → View Configuration**; the Applitools section appears under `unclassified: applitools:`.
+Steps 1, 3, 4 and 5, plus the admin user and the agent, fit in one `jenkins.yaml`. See [Configuration as Code](CONFIGURATION-AS-CODE.md) for the files, tested by the plugin's test suite.
 
 ## Using a personal access token instead of a GitHub App
 
 If your multibranch job already connects to GitHub with a personal access token, the plugin posts the same three results as **commit statuses** instead of checks. They have the same names (`Applitools / Visual tests`, `Applitools / Design review`, `Applitools / Baseline merge`), link to the same Eyes results, and can be required in branch protection the same way. You don't need the GitHub Checks plugin.
 
 What's different:
+- **Credential:** add the token as a **Username with password** credential (username: your GitHub username, password: the token) and select it under **Branch Sources → GitHub → Credentials**. GitHub Branch Source doesn't accept Secret text.
 - **Token permissions:** classic token: `repo` (or `repo:status` plus read access for public repos). Fine-grained token: **Commit statuses: read and write**, **Pull requests: read**, **Contents: read**.
 - **Webhook:** without an App, add the webhook to the repo yourself: **repo Settings → Webhooks → Add webhook**, payload URL `https://<your-jenkins>/github-webhook/`, content type `application/json`, the same secret as `github-webhook-secret`. Select **Pull requests** and **Pushes**.
 - **Waiting for review** shows as a yellow *pending* status (there's no "action required" for statuses). It still blocks the merge.
@@ -370,3 +314,57 @@ If GitHub can't reach your Jenkins, relay webhooks through [smee.io](https://sme
 3. Use the smee channel URL as the GitHub App's **Webhook URL**.
 
 Only GitHub → Jenkins needs the relay. Everything else (cloning, posting checks, talking to Eyes) is outbound from Jenkins.
+
+## Example agent: Node.js and Playwright
+
+The examples run tests on an agent labeled `playwright`. Any agent with Node.js and browsers works; this one is a container with Node 22 and Playwright's Chromium, Firefox and WebKit. Its browsers live in `/ms-playwright`, which is where the Storybook line in step 7 finds Chromium.
+
+**`Dockerfile`:**
+
+```dockerfile
+FROM docker.io/jenkins/inbound-agent:latest-jdk21
+
+# Match PLAYWRIGHT_VERSION to @playwright/test in your package.json.
+ARG NODE_MAJOR=22
+ARG PLAYWRIGHT_VERSION=latest
+
+USER root
+ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends curl ca-certificates gnupg \
+ && curl -fsSL https://deb.nodesource.com/setup_${NODE_MAJOR}.x | bash - \
+ && apt-get install -y --no-install-recommends nodejs \
+ && npx -y playwright@${PLAYWRIGHT_VERSION} install --with-deps chromium firefox webkit \
+ && chmod -R a+rx ${PLAYWRIGHT_BROWSERS_PATH} \
+ && rm -rf /var/lib/apt/lists/* /root/.npm
+USER jenkins
+```
+
+**`compose.yaml`:**
+
+```yaml
+services:
+  agent:
+    build: .
+    container_name: jenkins-agent-playwright
+    restart: unless-stopped
+    init: true                 # reaps leftover browser processes
+    shm_size: "2gb"            # Chromium crashes with the default 64 MB /dev/shm
+    environment:
+      - JENKINS_URL=${JENKINS_URL}               # as seen from the agent container
+      - JENKINS_AGENT_NAME=playwright
+      - JENKINS_SECRET=${JENKINS_AGENT_SECRET}
+      - JENKINS_WEB_SOCKET=true                  # connects over the web port
+      - JENKINS_AGENT_WORKDIR=/home/jenkins/agent
+      - CI=true
+```
+
+1. In Jenkins: **Manage Jenkins → Nodes → New Node**, name `playwright`, **Permanent Agent**. Set **Labels** to `playwright`, **Remote root directory** to `/home/jenkins/agent`, **Launch method** to *Launch agent by connecting it to the controller* with **Use WebSocket** ticked. (With [Configuration as Code](CONFIGURATION-AS-CODE.md), the node already exists.)
+2. Open the node's page and copy the secret it shows.
+3. Put `JENKINS_URL` and `JENKINS_AGENT_SECRET` in a `.env` file next to `compose.yaml`, then `docker compose up -d --build` (or `podman compose`).
+   - With Jenkins in another container on the same machine, use `http://host.docker.internal:8080/` (Docker) or `http://host.containers.internal:8080/` (Podman).
+
+The node shows as connected within a few seconds. **"incorrect secret"** in the agent's log means the secret or the node name doesn't match.
+
+Running Jenkins with one executor on the built-in node instead works too, for a trial: use `agent any` in the Jenkinsfile and install Node.js and browsers in the Jenkins container.
+

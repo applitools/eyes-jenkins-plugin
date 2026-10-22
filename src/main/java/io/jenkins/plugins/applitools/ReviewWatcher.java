@@ -46,6 +46,7 @@ public class ReviewWatcher extends AsyncPeriodicWork {
             ReviewRegistry registry = ReviewRegistry.get();
             long start = System.currentTimeMillis();
             boolean changed = false;
+            boolean polledAny = false; // the budget never stops a pass before its first poll, so every pass progresses
             List<PendingReview> reviews = new ArrayList<>(registry.all());
             reviews.sort(Comparator.comparingLong(PendingReview::getLastPolledAt));
             for (PendingReview review : reviews) {
@@ -58,9 +59,10 @@ public class ReviewWatcher extends AsyncPeriodicWork {
                 }
                 long now = System.currentTimeMillis();
                 if (review.needsPullPolling() && now >= review.nextPullPollAt(now)) {
-                    if (now - start > budgetMillis()) {
+                    if (polledAny && now - start > budgetMillis()) {
                         break;
                     }
+                    polledAny = true;
                     if (pollPullRequest(review, listener)) {
                         continue; // the PR closed: ReviewEvents took over (merge, then stop following)
                     }
@@ -72,9 +74,10 @@ public class ReviewWatcher extends AsyncPeriodicWork {
                     // (e.g. accepts after rejecting) still updates the PR; otherwise only label/merge events matter.
                     continue;
                 }
-                if (now - start > budgetMillis()) {
+                if (polledAny && now - start > budgetMillis()) {
                     break; // out of time this pass; the least recently polled go first next time
                 }
+                polledAny = true;
                 Run<?, ?> run = findRun(review);
                 if (run == null) {
                     registry.remove(review);
