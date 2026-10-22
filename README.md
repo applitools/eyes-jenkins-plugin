@@ -16,6 +16,16 @@ Every pull request then gets two checks: **Applitools / Visual tests** and **App
 
 **→ [Setup guide](docs/SETUP.md)** (recommended: multibranch + GitHub App, about 30 minutes) · **[Setup without multibranch](docs/SETUP-WITHOUT-MULTIBRANCH.md)** (any job type, just a token) · **[Configuration as Code](docs/CONFIGURATION-AS-CODE.md)** (the whole Jenkins side from one `jenkins.yaml`) · **[Resource usage and limits](docs/OPERATIONS.md)**
 
+## Support and maintenance
+
+This plugin is provided **as is**, with no commitment of any kind:
+
+- **No maintenance commitment.** It may not receive fixes, updates or security patches, and it may stop being developed at any time.
+- **No support or SLA.** There's no guaranteed response to questions, issues or pull requests, and no guaranteed time to resolve them.
+- **No upgrade guarantee.** It may stop working with future versions of Jenkins, its plugins, GitHub or Applitools Eyes, and later versions of this plugin may change behavior or settings without a migration path.
+
+Test it in your own environment before relying on it, and use it at your own risk. The software is licensed under the MIT License, which provides it without warranty of any kind.
+
 ## Develop
 
 ```bash
