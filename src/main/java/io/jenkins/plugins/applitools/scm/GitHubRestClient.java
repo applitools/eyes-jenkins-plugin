@@ -8,6 +8,7 @@ import edu.umd.cs.findbugs.annotations.NonNull;
 import hudson.model.Run;
 import hudson.util.Secret;
 import io.jenkins.plugins.applitools.EyesClient;
+import io.jenkins.plugins.applitools.ServerUrls;
 import java.io.IOException;
 import java.net.URI;
 import java.net.URLEncoder;
@@ -73,7 +74,7 @@ public class GitHubRestClient {
         if (targetUrl != null) {
             body.put("target_url", targetUrl);
         }
-        send(request("/repos/" + repo + "/statuses/" + encode(sha))
+        send(request(repoPath(repo) + "/statuses/" + encode(sha))
                 .POST(HttpRequest.BodyPublishers.ofString(body.toString()))
                 .header("Content-Type", "application/json"), "posting status '" + context + "'");
     }
@@ -98,7 +99,7 @@ public class GitHubRestClient {
     @CheckForNull
     public PullState pullIfChanged(@NonNull String repo, @NonNull String number, @CheckForNull String etag)
             throws IOException, InterruptedException {
-        HttpRequest.Builder request = request("/repos/" + repo + "/pulls/" + encode(number)).GET();
+        HttpRequest.Builder request = request(repoPath(repo) + "/pulls/" + encode(number)).GET();
         if (etag != null) {
             request.header("If-None-Match", etag);
         }
@@ -123,8 +124,8 @@ public class GitHubRestClient {
                 response.headers().firstValue("ETag").orElse(null));
     }
 
-    private HttpRequest.Builder request(String path) {
-        return HttpRequest.newBuilder(URI.create(apiUrl + path))
+    private HttpRequest.Builder request(String path) throws IOException {
+        return HttpRequest.newBuilder(URI.create(ServerUrls.check(apiUrl, "The GitHub API URL") + path))
                 .timeout(TIMEOUT)
                 .header("Authorization", "Bearer " + token)
                 .header("Accept", "application/vnd.github+json")
@@ -157,8 +158,20 @@ public class GitHubRestClient {
         try {
             return JSONObject.fromObject(response.body());
         } catch (JSONException e) {
-            throw new IOException("GitHub returned an unexpected response: " + e.getMessage(), e);
+            // Never the content: the server may not be GitHub, and this message reaches build logs.
+            throw new IOException("GitHub returned an unexpected response (HTTP " + response.statusCode() + ", "
+                    + response.headers().firstValue("Content-Type").orElse("no content type") + ")");
         }
+    }
+
+    private static final java.util.regex.Pattern REPO = java.util.regex.Pattern.compile("[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+");
+
+    /** {@code /repos/owner/repo}, for a repository name GitHub could actually have. */
+    private static String repoPath(String repo) throws IOException {
+        if (!REPO.matcher(repo).matches()) {
+            throw new IOException("Not a GitHub repository name (owner/repo): " + repo);
+        }
+        return "/repos/" + repo;
     }
 
     private static String encode(String value) {

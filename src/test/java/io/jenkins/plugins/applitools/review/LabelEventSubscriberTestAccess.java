@@ -22,16 +22,13 @@ public final class LabelEventSubscriberTestAccess {
         }
     }
 
-    /** Runs the raw-payload path and waits for the merge it schedules; false if it wasn't a closed-PR event. */
-    public static boolean handleMergedPayloadAndWait(String payload) throws Exception {
-        var work = ReviewEvents.handleMerged(payload);
-        if (work == null) {
-            return false;
-        }
+    /** Delivers a raw pull_request webhook payload and waits for everything it starts; returns how many tasks. */
+    public static int webhookAndWait(String payload) throws Exception {
+        var work = ReviewEvents.onPullRequestWebhook(payload);
         for (var future : work) {
             future.get(30, TimeUnit.SECONDS);
         }
-        return true;
+        return work.size();
     }
 
     /** A copy of a review as if its build were the given pull request (plain test pipelines aren't PRs). */

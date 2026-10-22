@@ -165,18 +165,6 @@ public class BaselineMergeTest {
     }
 
     @Test
-    void parsesGitHubClosedPayload() throws Exception {
-        String payload = """
-                {"action": "closed", "number": 7,
-                 "pull_request": {"merged": true, "head": {"ref": "feature"}, "base": {"ref": "main"}},
-                 "repository": {"full_name": "acme/web"}}
-                """;
-
-        assertThat(LabelEventSubscriberTestAccess.handleMergedPayloadAndWait(payload), is(true));
-        assertThat(eyes.merges, contains("acme/web/feature -> acme/web/main (false)"));
-    }
-
-    @Test
     void stepCanTurnMergingOff() throws Exception {
         eyes.results("b2", List.of(new FakeTest("s1", "unresolved")));
         WorkflowJob job = j.createProject(WorkflowJob.class);

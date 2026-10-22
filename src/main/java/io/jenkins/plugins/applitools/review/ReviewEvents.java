@@ -8,8 +8,12 @@ import hudson.security.ACL;
 import hudson.security.ACLContext;
 import io.jenkins.plugins.applitools.BaselineMerge;
 import io.jenkins.plugins.applitools.ReviewEvaluator;
+import io.jenkins.plugins.applitools.scm.GitHubRestClient;
+import io.jenkins.plugins.applitools.scm.PullRequestStates;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Future;
 import java.util.logging.Level;
 import java.util.logging.Logger;
@@ -18,8 +22,9 @@ import jenkins.util.Timer;
 import net.sf.json.JSONObject;
 
 /**
- * What happens when a pull request's labels change or it closes. Fed by GitHub webhooks (when the GitHub plugin is
- * installed) or by polling the PR with a token (jobs that aren't multibranch). Depends on no GitHub plugin.
+ * What happens when a pull request's labels change or it closes. Prompted by GitHub webhooks (when the GitHub plugin
+ * is installed) or by polling the PR with a token (jobs that aren't multibranch); either way, the PR's state is read
+ * from GitHub, never taken from a webhook payload. Depends on no GitHub plugin.
  */
 public final class ReviewEvents {
 
@@ -39,7 +44,20 @@ public final class ReviewEvents {
         return lastPullRequestRepo;
     }
 
-    /** Handles a raw {@code pull_request} webhook payload: label changes and closed PRs. */
+    /** Webhook actions that can change what the plugin reports: a merge, or the design-review label. */
+    private static final Set<String> RELEVANT_ACTIONS = Set.of("closed", "labeled", "unlabeled");
+
+    private static final java.util.regex.Pattern REPO = java.util.regex.Pattern.compile("[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+");
+
+    /** Builds whose baseline merge is running, so a repeated event doesn't start a second one. */
+    private static final Set<String> MERGING = ConcurrentHashMap.newKeySet();
+
+    /**
+     * Handles a raw {@code pull_request} webhook payload. The payload is only a hint that a PR changed: what changed
+     * (merged or not, its branches, its labels) is read back from GitHub with the job's own credentials before
+     * anything happens. A forged or replayed webhook, for example on a Jenkins without a webhook secret, therefore
+     * can't merge baselines or change the design-review label.
+     */
     public static List<Future<?>> onPullRequestWebhook(String rawPayload) {
         JSONObject json;
         try {
@@ -49,76 +67,67 @@ public final class ReviewEvents {
             return List.of();
         }
         JSONObject repo = json.optJSONObject("repository");
-        lastPullRequestRepo = repo != null ? repo.optString("full_name", null) : null;
+        String slug = repo != null ? repo.optString("full_name", null) : null;
+        lastPullRequestRepo = slug;
         lastPullRequestEvent = System.currentTimeMillis();
 
-        List<Future<?>> closed = handleMerged(json);
-        if (closed != null) {
-            return closed;
-        }
-        String action = json.optString("action");
-        JSONObject label = json.optJSONObject("label");
-        if (repo == null || label == null || !("labeled".equals(action) || "unlabeled".equals(action))) {
+        int number = json.optInt("number");
+        if (slug == null
+                || !REPO.matcher(slug).matches() // nothing GitHub would send; keeps odd text out of logs
+                || number <= 0
+                || !RELEVANT_ACTIONS.contains(json.optString("action"))) {
             return List.of();
         }
-        return labelChanged(
-                repo.optString("full_name"),
-                String.valueOf(json.optInt("number")),
-                label.optString("name"),
-                "labeled".equals(action));
+        return confirmWithGitHub(slug, String.valueOf(number));
+    }
+
+    /** Reads each followed review's PR from GitHub, then applies its real state: closed, merged, labels. */
+    static List<Future<?>> confirmWithGitHub(String repoSlug, String number) {
+        List<Future<?>> work = new ArrayList<>();
+        ReviewRegistry registry = ReviewRegistry.get();
+        for (PendingReview review : registry.forPullRequest(repoSlug, number)) {
+            work.add(Timer.get().submit(() -> {
+                try (ACLContext ignored = ACL.as2(ACL.SYSTEM2)) {
+                    Run<?, ?> run = findRun(review);
+                    if (run == null) {
+                        return;
+                    }
+                    GitHubRestClient.PullState pr = PullRequestStates.of(run, repoSlug, number);
+                    if (pr == null) {
+                        LOGGER.log(Level.FINE, "Can't read {0}#{1} from GitHub for {2}; ignoring the webhook",
+                                new Object[] {repoSlug, number, run.getFullDisplayName()});
+                        return;
+                    }
+                    if (!pr.open()) {
+                        closedNow(review, registry, pr.merged(), pr.headRef(), pr.baseRef());
+                        return;
+                    }
+                    boolean labeled = pr.labels().stream().anyMatch(l -> l.equalsIgnoreCase(review.getLabel()));
+                    if (review.isLabelDriven() && labeled != review.isLabelPresent()) {
+                        labelChangedNow(review, registry, labeled);
+                    }
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                } catch (Exception e) {
+                    LOGGER.log(Level.WARNING, "Could not apply a webhook for " + repoSlug + "#" + number, e);
+                }
+            }));
+        }
+        return work;
     }
 
     /**
-     * A closed PR (merged or not): merge its Eyes baselines if it merged, and stop following it.
-     *
-     * @return the scheduled work if the event was a closed PR, else {@code null}
+     * A closed PR, as read from GitHub: merge its Eyes baselines if it merged, and stop following it. Callers must
+     * pass GitHub's own state, never a webhook payload's.
      */
-    @CheckForNull
-    static List<Future<?>> handleMerged(JSONObject json) {
-        if (!"closed".equals(json.optString("action"))) {
-            return null;
-        }
-        JSONObject pr = json.optJSONObject("pull_request");
-        JSONObject repo = json.optJSONObject("repository");
-        if (pr == null || repo == null) {
-            return List.of();
-        }
-        String head = pr.optJSONObject("head") != null ? pr.getJSONObject("head").optString("ref", null) : null;
-        String base = pr.optJSONObject("base") != null ? pr.getJSONObject("base").optString("ref", null) : null;
-        return closed(
-                repo.optString("full_name"), String.valueOf(json.optInt("number")), pr.optBoolean("merged"), head, base);
-    }
-
-    /** Raw-payload variant kept for tests. */
-    @CheckForNull
-    static List<Future<?>> handleMerged(String rawPayload) {
-        try {
-            return handleMerged(JSONObject.fromObject(rawPayload));
-        } catch (RuntimeException e) {
-            return null;
-        }
-    }
-
-    /** Merges baselines for a merged PR (if enabled) and drops its review, or keeps it until the merge succeeds. */
     public static List<Future<?>> closed(
             String repoSlug, String number, boolean merged, @CheckForNull String headRef, @CheckForNull String baseRef) {
         List<Future<?>> work = new ArrayList<>();
         ReviewRegistry registry = ReviewRegistry.get();
         for (PendingReview review : registry.forPullRequest(repoSlug, number)) {
-            if (!merged || headRef == null || baseRef == null || !review.isMergeBaselinesOnPrMerge()) {
-                registry.remove(review);
-                continue;
-            }
-            // Keep following it (without polling) until the merge succeeds, so a retry can find it.
-            review.setSettled(true);
-            review.setClosed(true);
-            registry.saveQuietly();
             work.add(Timer.get().submit(() -> {
                 try (ACLContext ignored = ACL.as2(ACL.SYSTEM2)) {
-                    Run<?, ?> run = findRun(review);
-                    if (run == null || BaselineMerge.merge(review, run, headRef, baseRef, TaskListener.NULL)) {
-                        registry.remove(review);
-                    }
+                    closedNow(review, registry, merged, headRef, baseRef);
                 } catch (InterruptedException e) {
                     Thread.currentThread().interrupt();
                 } catch (RuntimeException e) {
@@ -129,7 +138,43 @@ public final class ReviewEvents {
         return work;
     }
 
-    /** Applies a label change to the PR's tracked review and re-posts its Design review result. */
+    /** Merges baselines for a merged PR (if enabled) and drops its review, or keeps it until the merge succeeds. */
+    private static void closedNow(
+            PendingReview review,
+            ReviewRegistry registry,
+            boolean merged,
+            @CheckForNull String headRef,
+            @CheckForNull String baseRef)
+            throws InterruptedException {
+        if (!merged || headRef == null || baseRef == null || !review.isMergeBaselinesOnPrMerge()) {
+            registry.remove(review);
+            return;
+        }
+        String key = review.getJobFullName() + "#" + review.getBuildNumber();
+        if (!MERGING.add(key)) {
+            return; // already merging
+        }
+        if (!registry.all().contains(review)) {
+            MERGING.remove(key);
+            return; // merged already, by an earlier event
+        }
+        try {
+            // Keep following it (without polling) until the merge succeeds, so a retry can find it.
+            review.setSettled(true);
+            review.setClosed(true);
+            registry.saveQuietly();
+            Run<?, ?> run = findRun(review);
+            if (run == null || BaselineMerge.merge(review, run, headRef, baseRef, TaskListener.NULL)) {
+                registry.remove(review);
+            }
+        } finally {
+            MERGING.remove(key);
+        }
+    }
+
+    /**
+     * Applies a label change, as read from GitHub, to the PR's tracked review and re-posts its Design review result.
+     */
     public static List<Future<?>> labelChanged(String repoSlug, String number, String labelName, boolean added) {
         List<Future<?>> work = new ArrayList<>();
         ReviewRegistry registry = ReviewRegistry.get();
@@ -138,22 +183,27 @@ public final class ReviewEvents {
                     || review.isLabelPresent() == added) {
                 continue;
             }
-            review.setLabelPresent(added);
-            review.setSettled(false);
-            registry.saveQuietly();
             work.add(Timer.get().submit(() -> {
                 try (ACLContext ignored = ACL.as2(ACL.SYSTEM2)) {
-                    Run<?, ?> run = findRun(review);
-                    if (run != null) {
-                        ReviewEvaluator.refresh(review, run, TaskListener.NULL);
-                        registry.saveQuietly();
-                    }
+                    labelChangedNow(review, registry, added);
                 } catch (Exception e) {
                     LOGGER.log(Level.WARNING, "Could not apply label change to " + repoSlug + "#" + number, e);
                 }
             }));
         }
         return work;
+    }
+
+    private static void labelChangedNow(PendingReview review, ReviewRegistry registry, boolean added)
+            throws Exception {
+        review.setLabelPresent(added);
+        review.setSettled(false);
+        registry.saveQuietly();
+        Run<?, ?> run = findRun(review);
+        if (run != null) {
+            ReviewEvaluator.refresh(review, run, TaskListener.NULL);
+            registry.saveQuietly();
+        }
     }
 
     @CheckForNull

@@ -20,7 +20,7 @@ What the plugin costs a Jenkins controller in memory, threads, network and disk,
 | --- | --- | --- |
 | **During the build** | When the `applitools` block ends | Closes the batch, then polls Eyes every 5 s until rendering finishes (at most `resultsTimeout`, default 300 s, so ≤ 60 small requests). Runs on the build's own executor, like any build step. |
 | **Review watcher** | A background pass once a minute | Re-reads Eyes for builds whose changes are still waiting on reviewers, and updates the PR checks. |
-| **Label and merge webhooks** | When GitHub sends them | One short task on Jenkins' shared timer pool. A merge polls Eyes every 5 s, for at most 10 minutes. |
+| **Label and merge webhooks** | When GitHub sends them | One short task on Jenkins' shared timer pool, which reads the PR from GitHub (one API call) and acts on that, never on the webhook's own content. A merge polls Eyes every 5 s, for at most 10 minutes, and runs at most once per build. |
 
 ### Which builds the watcher follows
 

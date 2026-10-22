@@ -226,7 +226,7 @@ Re-read results (read key) → re-apply expectations → if the Visual tests sta
 | PR `closed`, `merged: true` | Baseline merge (§11); keep the review (settled) until the merge succeeds, so a retry can find it |
 | PR `closed`, not merged | Stop following |
 
-Sources: webhooks when available; otherwise **poll the PR** (§10.8). Both MUST run the same handlers.
+Sources: webhooks when available; otherwise **poll the PR** (§10.8). Both MUST run the same handlers. **A webhook is only a prompt:** before merging baselines or changing label state, read the PR from GitHub with the job's own credentials and use that response's `merged`, `head.ref`, `base.ref` and labels. Never act on a payload's values; a forged or replayed webhook (e.g. without a webhook secret) must not be able to merge baselines or switch design review off. Run at most one merge per build at a time.
 
 ### 8.4 Polling limits (Jenkins values; an Action will have its own constraints)
 

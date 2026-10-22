@@ -93,8 +93,9 @@ public class BatchResults implements Serializable {
             return status;
         }
 
+        /** The test's page in Eyes; {@code null} unless it's an http(s) link. */
         public String getUrl() {
-            return url;
+            return safeUrl(url);
         }
     }
 
@@ -239,7 +240,7 @@ public class BatchResults implements Serializable {
         map.put("summary", getSummary());
         map.put("batchId", batchId);
         map.put("batchName", name);
-        map.put("url", url);
+        map.put("url", getUrl());
         map.put("passed", passed);
         map.put("failed", failed);
         map.put("unresolved", unresolved);
@@ -262,8 +263,28 @@ public class BatchResults implements Serializable {
         return eyesBatchId;
     }
 
+    /** The batch's page in Eyes; {@code null} unless it's an http(s) link. */
     public String getUrl() {
-        return url;
+        return safeUrl(url);
+    }
+
+    /**
+     * Links come from the Eyes server's response and are shown on build pages, so only plain web links are kept: a
+     * {@code javascript:} link would run in Jenkins when clicked. Checked on read, so builds stored before this check
+     * are covered too.
+     */
+    @edu.umd.cs.findbugs.annotations.CheckForNull
+    static String safeUrl(@edu.umd.cs.findbugs.annotations.CheckForNull String url) {
+        if (url == null) {
+            return null;
+        }
+        try {
+            java.net.URI uri = new java.net.URI(url.trim());
+            String scheme = uri.getScheme() != null ? uri.getScheme().toLowerCase(java.util.Locale.ROOT) : "";
+            return (scheme.equals("https") || scheme.equals("http")) && uri.getHost() != null ? url.trim() : null;
+        } catch (java.net.URISyntaxException e) {
+            return null;
+        }
     }
 
     public int getPassed() {

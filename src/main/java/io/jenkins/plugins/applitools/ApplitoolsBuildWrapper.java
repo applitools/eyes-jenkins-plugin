@@ -422,6 +422,12 @@ public class ApplitoolsBuildWrapper extends SimpleBuildWrapper {
         }
 
         String server = effectiveServerUrl();
+        try {
+            ServerUrls.check(server, "The Eyes server URL");
+            ServerUrls.checkOptional(expand(initialEnvironment, githubApiUrl), "The GitHub API URL");
+        } catch (ServerUrls.RefusedUrlException e) {
+            throw new AbortException(LOG_PREFIX + e.getMessage());
+        }
         String credId = effectiveCredentialsId();
         String apiKey = lookupApiKey(build, credId);
         if (apiKey == null) {

@@ -224,7 +224,7 @@ All are optional.
 | --- | --- | --- |
 | `credentialsId` | `applitools-api-key` | Secret text credential with the Eyes run key |
 | `readCredentialsId` | `applitools-read-api-key` (if it exists), else the run key | Key used to read results |
-| `serverUrl` | global setting | Eyes server, for dedicated or on-prem |
+| `serverUrl` | global setting | Eyes server, for dedicated or on-prem. Must be `https://` (or `http://`); link-local and cloud metadata addresses are refused |
 | `onChanges` | `'SUCCESS'` | Build result when there are changes to review: `'SUCCESS'` (green: the PR results are the gate), `'UNSTABLE'` or `'FAILURE'`. Rejected or aborted tests and missing results always fail the build. |
 | `mergeBaselines` | global setting | `true`/`false`: merge this job's Eyes baselines into the target branch's **when its PR merges** (only then) |
 | `designReview` | from label / env / global | `true` or `false` to require or skip design review |
@@ -268,6 +268,8 @@ Branch names follow Eyes' `owner/repo/branch` convention, so baselines line up w
 | Webhook deliveries show **405** | The webhook URL is missing the trailing slash: use `/github-webhook/`. |
 | Webhook deliveries show **400** | Signature mismatch: the secret in the GitHub App and in `github-webhook-secret` differ. |
 | Log: **"Eyes refused to share results (HTTP 403)"** | Run keys can't read results. Add the `applitools-read-api-key` credential. |
+| Log: **"… points at a reserved address"** or **"must start with https://"** | `serverUrl` or `githubApiUrl` names a link-local or cloud metadata address, or isn't a web URL. Use your Eyes server's or GitHub's address. |
+| Log: **"Response larger than 16 MB; not read"** | A server returned far more than any Eyes or GitHub response. Check `serverUrl`. For a legitimately huge batch, raise the limit with the system property `io.jenkins.plugins.applitools.EyesClient.maxResponseMegabytes`. |
 | Log: **"No Secret text credential with ID …"** | The credential ID doesn't match exactly (check spelling). |
 | Build is **red** on visual changes | An SDK is failing the command on diffs. Playwright: add the `failTestsOnDiff` line from step 6. Storybook/Cypress: check you haven't set `APPLITOOLS_EXITCODE` / `APPLITOOLS_FAIL_CYPRESS_ON_DIFF` yourself, and that `judgeDiffs` isn't `false`. |
 | **Visual tests: "Missing results: no tests from …"** | A suite reported nothing to Eyes. Look in the build log for that suite's error (e.g. a browser that wouldn't start). |

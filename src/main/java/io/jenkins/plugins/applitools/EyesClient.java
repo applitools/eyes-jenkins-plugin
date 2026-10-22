@@ -113,7 +113,7 @@ public class EyesClient {
         try {
             array = net.sf.json.JSONArray.fromObject(response.body());
         } catch (net.sf.json.JSONException e) {
-            throw new IOException("Eyes returned an unexpected team list: " + e.getMessage(), e);
+            throw unexpected(response, "team list");
         }
         for (int i = 0; i < array.size(); i++) {
             JSONObject team = array.optJSONObject(i);
@@ -258,12 +258,21 @@ public class EyesClient {
         try {
             return JSONObject.fromObject(response.body());
         } catch (JSONException e) {
-            throw new IOException("Eyes returned an unexpected response: " + e.getMessage(), e);
+            throw unexpected(response, "response");
         }
     }
 
-    private URI uri(String pathAndQuery) {
-        return URI.create(serverUrl + pathAndQuery);
+    /**
+     * Describes a response that isn't the JSON expected, without any of its content: the server may not be Eyes, and
+     * error messages end up in build logs and on pull requests.
+     */
+    private static IOException unexpected(HttpResponse<String> response, String what) {
+        return new IOException("Eyes returned an unexpected " + what + " (HTTP " + response.statusCode() + ", "
+                + response.headers().firstValue("Content-Type").orElse("no content type") + ")");
+    }
+
+    private URI uri(String pathAndQuery) throws IOException {
+        return URI.create(ServerUrls.check(serverUrl, "The Eyes server URL") + pathAndQuery);
     }
 
     private HttpResponse<String> send(HttpRequest.Builder request) throws IOException, InterruptedException {
@@ -284,18 +293,91 @@ public class EyesClient {
                 .firstValue("Content-Encoding")
                 .map(v -> v.equalsIgnoreCase("gzip"))
                 .orElse(false);
-        if (!gzip) {
-            return HttpResponse.BodySubscribers.ofString(StandardCharsets.UTF_8);
-        }
-        return HttpResponse.BodySubscribers.mapping(HttpResponse.BodySubscribers.ofByteArray(), bytes -> {
+        return HttpResponse.BodySubscribers.mapping(new BoundedBody(maxResponseBytes()), bytes -> {
+            if (!gzip) {
+                return new String(bytes, StandardCharsets.UTF_8);
+            }
             try (java.util.zip.GZIPInputStream in =
                     new java.util.zip.GZIPInputStream(new java.io.ByteArrayInputStream(bytes))) {
-                return new String(in.readAllBytes(), StandardCharsets.UTF_8);
+                return new String(readAtMost(in, maxResponseBytes()), StandardCharsets.UTF_8);
             } catch (IOException e) {
                 throw new java.io.UncheckedIOException(e);
             }
         });
     };
+
+    /**
+     * The largest response the plugin reads, before and after decompression. Eyes results for a 1,000-test batch are
+     * under 1 MB; the limit keeps a misbehaving or hostile server from exhausting the controller's memory.
+     */
+    static int maxResponseBytes() {
+        return Integer.getInteger(EyesClient.class.getName() + ".maxResponseMegabytes", 16) * 1024 * 1024;
+    }
+
+    static byte[] readAtMost(java.io.InputStream in, int limit) throws IOException {
+        java.io.ByteArrayOutputStream out = new java.io.ByteArrayOutputStream();
+        byte[] buffer = new byte[8192];
+        int n;
+        while ((n = in.read(buffer)) != -1) {
+            if (out.size() + n > limit) {
+                throw new IOException("Response larger than " + limit / (1024 * 1024) + " MB; not read");
+            }
+            out.write(buffer, 0, n);
+        }
+        return out.toByteArray();
+    }
+
+    /** Collects a response body, failing (and cancelling the download) once it exceeds {@code limit} bytes. */
+    static final class BoundedBody implements HttpResponse.BodySubscriber<byte[]> {
+        private final int limit;
+        private final java.io.ByteArrayOutputStream out = new java.io.ByteArrayOutputStream();
+        private final java.util.concurrent.CompletableFuture<byte[]> result =
+                new java.util.concurrent.CompletableFuture<>();
+        private java.util.concurrent.Flow.Subscription subscription;
+
+        BoundedBody(int limit) {
+            this.limit = limit;
+        }
+
+        @Override
+        public java.util.concurrent.CompletionStage<byte[]> getBody() {
+            return result;
+        }
+
+        @Override
+        public void onSubscribe(java.util.concurrent.Flow.Subscription subscription) {
+            this.subscription = subscription;
+            subscription.request(Long.MAX_VALUE);
+        }
+
+        @Override
+        public void onNext(java.util.List<java.nio.ByteBuffer> items) {
+            if (result.isDone()) {
+                return;
+            }
+            for (java.nio.ByteBuffer item : items) {
+                if (out.size() + item.remaining() > limit) {
+                    subscription.cancel();
+                    result.completeExceptionally(
+                            new IOException("Response larger than " + limit / (1024 * 1024) + " MB; not read"));
+                    return;
+                }
+                byte[] bytes = new byte[item.remaining()];
+                item.get(bytes);
+                out.writeBytes(bytes);
+            }
+        }
+
+        @Override
+        public void onError(Throwable throwable) {
+            result.completeExceptionally(throwable);
+        }
+
+        @Override
+        public void onComplete() {
+            result.complete(out.toByteArray());
+        }
+    }
 
     private static HttpClient sharedClient;
     private static ProxyConfiguration sharedClientProxy;
