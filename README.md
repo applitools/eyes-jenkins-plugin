@@ -14,7 +14,7 @@ Every pull request then gets two checks: **Applitools / Visual tests** and **App
 - **Design review on demand:** add the `design-review` label to a PR, and a designer has to approve its visual changes. Optionally, only listed designers count.
 - **Results in Jenkins too:** a summary on the build page and `applitoolsResults()` for your own logic. Changes awaiting review keep the build green; the Applitools PR results are the gate.
 
-**→ [Setup guide](docs/SETUP.md)** (recommended: multibranch + GitHub App, about 30 minutes) · **[Setup without multibranch](docs/SETUP-WITHOUT-MULTIBRANCH.md)** (any job type, just a token) · **[Configuration as Code](docs/CONFIGURATION-AS-CODE.md)** (the whole Jenkins side from one `jenkins.yaml`) · **[Resource usage and limits](docs/OPERATIONS.md)**
+**→ [Setup guide](docs/SETUP.md)** (recommended: multibranch + GitHub App, about 30 minutes) · **[Setup without multibranch](docs/SETUP-WITHOUT-MULTIBRANCH.md)** (any job type, just a token) · **[Configuration as Code](docs/CONFIGURATION-AS-CODE.md)** (the whole Jenkins side from one `jenkins.yaml`) · **[Resource usage and limits](docs/OPERATIONS.md)** · **[Security review](docs/SECURITY.md)** (what it can access, findings and fixes)
 
 ## Support and maintenance
 
@@ -24,7 +24,7 @@ This plugin is provided **as is**, with no commitment of any kind:
 - **No support or SLA.** There's no guaranteed response to questions, issues or pull requests, and no guaranteed time to resolve them.
 - **No upgrade guarantee.** It may stop working with future versions of Jenkins, its plugins, GitHub or Applitools Eyes, and later versions of this plugin may change behavior or settings without a migration path.
 
-Test it in your own environment before relying on it, and use it at your own risk. The software is licensed under the MIT License, which provides it without warranty of any kind.
+Test it in your own environment before relying on it, and use it at your own risk. For what the plugin can access and how it was reviewed, see the [security review](docs/SECURITY.md). The software is licensed under the MIT License, which provides it without warranty of any kind.
 
 ## Develop
 
