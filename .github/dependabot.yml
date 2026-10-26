@@ -1,0 +1,25 @@
+# Keeps the plugin's dependencies current. Almost every version comes from the Jenkins plugin BOM
+# (io.jenkins.tools.bom) and the build from the Jenkins plugin parent POM (org.jenkins-ci.plugins:plugin),
+# so those two are the main updates; they're grouped into one weekly pull request.
+# Security updates for known vulnerabilities are separate and arrive as soon as an advisory is published.
+version: 2
+updates:
+  - package-ecosystem: maven
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 10
+    labels:
+      - dependencies
+    groups:
+      jenkins:
+        patterns:
+          - "io.jenkins.tools.bom:*"
+          - "org.jenkins-ci.plugins:plugin"
+      other:
+        patterns:
+          - "*"
+        exclude-patterns:
+          - "io.jenkins.tools.bom:*"
+          - "org.jenkins-ci.plugins:plugin"
