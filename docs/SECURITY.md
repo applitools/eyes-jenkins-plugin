@@ -38,7 +38,7 @@ There is no telemetry and no other outbound traffic. The only inbound traffic is
 **Data stored in `$JENKINS_HOME`:**
 - **Global settings:** credential IDs, URLs and options.
 - **Per build:** the Eyes batch's results (test names, browsers, statuses and links to Eyes).
-- **Review registry:** one entry per followed pull request, with job, build number, credential IDs, PR number and review state. There are at most 500 entries, and each is dropped after 14 days at the latest.
+- **Review registry:** one entry per followed pull request, with job, build number, credential IDs, PR number and review state. There are at most 500 entries, and each is dropped after 14 days by default (an administrator can set 1 to 365).
 
 **Background work.** After a pull request's build finishes, a background task polls Eyes and GitHub to keep that PR's results current. It runs as Jenkins' system user, but it always looks up credentials as the *job's* own authentication, so it can't use credentials the job couldn't. It uses no build executors. Its limits are described in [OPERATIONS.md](OPERATIONS.md).
 

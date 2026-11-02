@@ -21,10 +21,6 @@ public class ReviewRegistry implements Saveable {
 
     private static final Logger LOGGER = Logger.getLogger(ReviewRegistry.class.getName());
 
-    /** How long to follow a review before giving up on it. */
-    static final long MAX_AGE_MILLIS =
-            Long.getLong(ReviewRegistry.class.getName() + ".maxAgeDays", 14) * 24 * 60 * 60 * 1000;
-
     /** Most builds followed at once; past this, the longest-followed are dropped. */
     static int maxReviews() {
         return Integer.getInteger(ReviewRegistry.class.getName() + ".maxReviews", 500);
@@ -99,7 +95,8 @@ public class ReviewRegistry implements Saveable {
     public synchronized List<PendingReview> all() {
         ensureLoaded();
         long now = System.currentTimeMillis();
-        if (reviews.removeIf(r -> now - r.getRegisteredAt() > MAX_AGE_MILLIS)) {
+        long maxAge = PollSchedule.current().follow(); // how long to follow a review before giving up on it
+        if (reviews.removeIf(r -> now - r.getRegisteredAt() > maxAge)) {
             saveQuietly();
         }
         return new ArrayList<>(reviews);

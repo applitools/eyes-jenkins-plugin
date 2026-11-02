@@ -38,6 +38,13 @@ class GlobalSettingsFormTest {
         config.setDesignReviewByDefault(true);
         config.setMergeBaselines(false);
         config.setFollowBranchBuilds(true);
+        config.setReviewPollSeconds(20);
+        config.setReviewSlowAfterMinutes(45);
+        config.setReviewSlowPollMinutes(3);
+        config.setReviewSlowestAfterHours(12);
+        config.setReviewSlowestPollMinutes(20);
+        config.setSettledRecheckMinutes(15);
+        config.setFollowReviewsDays(30);
 
         j.configRoundtrip();
 
@@ -53,6 +60,13 @@ class GlobalSettingsFormTest {
         assertThat(config.isDesignReviewByDefault(), is(true));
         assertThat(config.isMergeBaselines(), is(false));
         assertThat(config.isFollowBranchBuilds(), is(true));
+        assertThat(config.getReviewPollSeconds(), is(20));
+        assertThat(config.getReviewSlowAfterMinutes(), is(45));
+        assertThat(config.getReviewSlowPollMinutes(), is(3));
+        assertThat(config.getReviewSlowestAfterHours(), is(12));
+        assertThat(config.getReviewSlowestPollMinutes(), is(20));
+        assertThat(config.getSettledRecheckMinutes(), is(15));
+        assertThat(config.getFollowReviewsDays(), is(30));
     }
 
     @Test

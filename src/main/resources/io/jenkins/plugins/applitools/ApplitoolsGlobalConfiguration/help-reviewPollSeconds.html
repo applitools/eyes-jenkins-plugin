@@ -1,0 +1,16 @@
+<div>
+  <p>
+    After a build, the plugin keeps checking Eyes for reviewers' decisions and updates the pull request, so accepting
+    changes in Eyes turns the results green without re-running the build. Checking slows down as a review ages,
+    because reviewers rarely act on old pull requests.
+  </p>
+  <p>
+    By default: every 60 seconds for the first 60 minutes, every 5 minutes until the review is 24 hours old, then
+    every 30 minutes. After an error, the interval doubles each time, up to an hour (or the slowest interval, if that's
+    longer).
+  </p>
+  <p>
+    Shorter intervals update pull requests sooner but make more Eyes API calls. Each check is one small request per
+    review, so the cost grows with the number of open pull requests waiting on reviewers.
+  </p>
+</div>

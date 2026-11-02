@@ -74,3 +74,10 @@ unclassified:
     apiKeyInQuery: true
     hideReviewers: true
     lockDesignReview: true
+    reviewPollSeconds: 30
+    reviewSlowAfterMinutes: 20
+    reviewSlowPollMinutes: 2
+    reviewSlowestAfterHours: 6
+    reviewSlowestPollMinutes: 15
+    settledRecheckMinutes: 10
+    followReviewsDays: 7

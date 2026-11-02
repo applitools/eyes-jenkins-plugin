@@ -310,6 +310,13 @@ Everything under `unclassified: applitools:` is optional. Leave out what you don
 | `allowForkPullRequests` | `false` | Advanced → Run visual tests on pull requests from forks |
 | `allowHttp` | `false` | Advanced → Allow http:// Eyes and GitHub URLs on other machines |
 | `apiKeyInQuery` | `false` | Advanced → Older on-premises Eyes: retry closing batches with the run key in the URL |
+| `reviewPollSeconds` | `60` | Review polling → Check every (seconds); at least 15 |
+| `reviewSlowAfterMinutes` | `60` | Review polling → Slow down after (minutes) |
+| `reviewSlowPollMinutes` | `5` | Review polling → Then check every (minutes) |
+| `reviewSlowestAfterHours` | `24` | Review polling → Slow down again after (hours) |
+| `reviewSlowestPollMinutes` | `30` | Review polling → Then check every (minutes) |
+| `settledRecheckMinutes` | `30` | Review polling → Recheck fully reviewed pull requests every (minutes) |
+| `followReviewsDays` | `14` | Review polling → Stop following a review after (days); 1 to 365 |
 
 ## 4. Start Jenkins
 

@@ -59,6 +59,36 @@
       </f:entry>
     </f:section>
 
+    <f:advanced title="Review polling">
+      <f:description>
+        After a build, the plugin checks Eyes for reviewers' decisions and updates the pull request.
+        It checks less often as a review ages. Pull requests reported with a token are checked on GitHub on the same schedule.
+      </f:description>
+      <f:entry title="Check every (seconds)" field="reviewPollSeconds"
+               description="How often to check a new review. At least 15.">
+        <f:number min="15" default="${descriptor.DEFAULT_REVIEW_POLL_SECONDS}" />
+      </f:entry>
+      <f:entry title="Slow down after (minutes)" field="reviewSlowAfterMinutes">
+        <f:number min="1" default="${descriptor.DEFAULT_REVIEW_SLOW_AFTER_MINUTES}" />
+      </f:entry>
+      <f:entry title="Then check every (minutes)" field="reviewSlowPollMinutes">
+        <f:number min="1" default="${descriptor.DEFAULT_REVIEW_SLOW_POLL_MINUTES}" />
+      </f:entry>
+      <f:entry title="Slow down again after (hours)" field="reviewSlowestAfterHours">
+        <f:number min="1" default="${descriptor.DEFAULT_REVIEW_SLOWEST_AFTER_HOURS}" />
+      </f:entry>
+      <f:entry title="Then check every (minutes)" field="reviewSlowestPollMinutes">
+        <f:number min="1" default="${descriptor.DEFAULT_REVIEW_SLOWEST_POLL_MINUTES}" />
+      </f:entry>
+      <f:entry title="Recheck fully reviewed pull requests every (minutes)" field="settledRecheckMinutes"
+               description="Catches a reviewer changing their mind in Eyes after everything was approved or rejected.">
+        <f:number min="1" default="${descriptor.DEFAULT_SETTLED_RECHECK_MINUTES}" />
+      </f:entry>
+      <f:entry title="Stop following a review after (days)" field="followReviewsDays">
+        <f:number min="1" max="365" default="${descriptor.DEFAULT_FOLLOW_REVIEWS_DAYS}" />
+      </f:entry>
+    </f:advanced>
+
     <f:advanced title="Advanced">
       <f:entry field="followBranchBuilds">
         <f:checkbox title="Keep updating results for branch builds (not just pull requests) after they finish" />

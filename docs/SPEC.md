@@ -212,7 +212,7 @@ The point of the gate is that results update when reviewers act in Eyes, with no
 - **Branch builds are not followed** by default (opt-in `followBranchBuilds`): nobody reviews them, so they'd never settle. When followed, they stop once **settled**.
 - **Open PRs** stay followed when settled, because a label change or the merge can still affect them, and a reviewer can change their mind in Eyes (re-read every 30 min).
 - **Reconciliation on every pass** (no network in the common case): drop when the build is deleted, the job is gone or disabled (closed PR / deleted branch), or the job has a newer finished build. Before dropping a closed PR, **ask GitHub whether it merged**, and if so run the baseline merge (covers missed webhooks). If GitHub can't be reached, retry next pass instead of dropping.
-- Dropped when: the PR closes (or merges and its baseline merge succeeds), the build is deleted, after **14 days**, or past a **cap of 500** (oldest first).
+- Dropped when: the PR closes (or merges and its baseline merge succeeds), the build is deleted, after **14 days** (Jenkins: configurable), or past a **cap of 500** (oldest first).
 
 ### 8.2 Refresh
 
@@ -232,9 +232,10 @@ Sources: webhooks when available; otherwise **poll the PR** (§10.8). Both MUST 
 
 | Limit | Value |
 | --- | --- |
-| Interval by review age | 1 min (first hour) → 5 min (first day) → 30 min |
-| Error backoff | Interval doubled per consecutive error, at most 1 hour; reset on success |
-| Per-pass time budget | 50 s; least recently polled first |
+| Interval by review age | 1 min (first hour) → 5 min (first day) → 30 min by default. Jenkins lets admins set each interval and step (fastest 15 s); a later interval is never shorter than an earlier one |
+| Settled open PRs | Re-read every 30 min by default (Jenkins: configurable) |
+| Error backoff | Interval doubled per consecutive error, at most 1 hour (or the slowest interval, if longer); reset on success |
+| Per-pass time budget | 50 s (Jenkins: ⅚ of the pass interval when under a minute, at least 10 s); least recently polled first |
 | Overlap | Never two passes at once |
 | Saves | Only when something changed |
 | HTTP | One shared client; gzip for Eyes; ETag for GitHub PRs |

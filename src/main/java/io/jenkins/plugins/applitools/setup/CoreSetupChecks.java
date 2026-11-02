@@ -10,10 +10,12 @@ import io.jenkins.plugins.applitools.ApplitoolsGlobalConfiguration;
 import io.jenkins.plugins.applitools.Designers;
 import io.jenkins.plugins.applitools.EyesClient;
 import io.jenkins.plugins.applitools.review.PendingReview;
+import io.jenkins.plugins.applitools.review.PollSchedule;
 import io.jenkins.plugins.applitools.review.ReviewRegistry;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.TimeUnit;
 import jenkins.model.Jenkins;
 import jenkins.model.JenkinsLocationConfiguration;
 import org.jenkinsci.plugins.plaincredentials.StringCredentials;
@@ -80,17 +82,19 @@ public class CoreSetupChecks extends SetupCheck {
                 .sorted()
                 .toList();
         long openPrs = reviews.stream().filter(r -> r.isSettled() && r.isPullRequest()).count();
+        PollSchedule schedule = PollSchedule.current();
         String detail = waiting.isEmpty()
                 ? "Nothing waiting on reviewers in Eyes."
                 : waiting.size() + " build" + (waiting.size() == 1 ? "" : "s") + " waiting on reviewers in Eyes,"
-                        + " rechecked every minute: " + String.join(", ", waiting) + ".";
+                        + " rechecked every " + every(schedule.first()) + ": " + String.join(", ", waiting) + ".";
         long oldestDays = reviews.stream()
                 .mapToLong(r -> (System.currentTimeMillis() - r.getRegisteredAt()) / 86_400_000L)
                 .max()
                 .orElse(0);
         if (oldestDays >= 1) {
             detail += " Oldest: " + oldestDays + " day" + (oldestDays == 1 ? "" : "s")
-                    + " (polled less often as reviews age; dropped after 14 days).";
+                    + " (polled less often as reviews age; dropped after "
+                    + TimeUnit.MILLISECONDS.toDays(schedule.follow()) + " days).";
         }
         if (openPrs > 0) {
             detail += " " + openPrs + " open pull request" + (openPrs == 1 ? " is" : "s are")
@@ -193,6 +197,16 @@ public class CoreSetupChecks extends SetupCheck {
     }
 
     @CheckForNull
+    /** "minute", "2 minutes" or "15 seconds". */
+    static String every(long millis) {
+        long seconds = TimeUnit.MILLISECONDS.toSeconds(millis);
+        if (seconds % 60 != 0) {
+            return seconds + " seconds";
+        }
+        long minutes = seconds / 60;
+        return minutes == 1 ? "minute" : minutes + " minutes";
+    }
+
     private static String secret(String id) {
         StringCredentials credentials = CredentialsMatchers.firstOrNull(
                 CredentialsProvider.lookupCredentialsInItemGroup(

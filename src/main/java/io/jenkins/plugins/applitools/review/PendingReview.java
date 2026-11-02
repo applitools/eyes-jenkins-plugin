@@ -197,32 +197,22 @@ public class PendingReview {
 
     /**
      * When the watcher should poll Eyes next. Polling slows as a review ages (reviewers rarely act on week-old PRs),
-     * and backs off after errors (Eyes down or slow), so long-forgotten PRs cost almost nothing.
+     * and backs off after errors (Eyes down or slow), so long-forgotten PRs cost almost nothing. The schedule is a
+     * global setting ({@link PollSchedule}); by default:
      *
      * <ul>
      *   <li>first hour: every minute
      *   <li>first day: every 5 minutes
      *   <li>after that: every 30 minutes
-     *   <li>after N consecutive errors: the above, doubled N times, at most an hour
+     *   <li>after N consecutive errors: the above, doubled N times, at most an hour (or the slowest interval)
      * </ul>
      */
     public long nextPollAt(long now) {
-        long unit = minPollMillis();
-        long age = now - registeredAt;
-        long interval = age < 3_600_000L ? unit : age < 86_400_000L ? 5 * unit : 30 * unit;
-        if (failures > 0) {
-            interval = Math.min(Math.max(interval, unit) << Math.min(failures, 10), 60 * unit);
-        }
-        return lastPolledAt + interval;
+        return nextPollAt(now, PollSchedule.current());
     }
 
-    public static long minPollMillisPublic() {
-        return minPollMillis();
-    }
-
-    /** The base polling interval (one minute); tests lower it. */
-    static long minPollMillis() {
-        return Long.getLong(PendingReview.class.getName() + ".minPollSeconds", 60) * 1000;
+    public long nextPollAt(long now, PollSchedule schedule) {
+        return lastPolledAt + schedule.interval(now - registeredAt, failures);
     }
 
     public long getLastPolledAt() {
@@ -270,13 +260,11 @@ public class PendingReview {
 
     /** Same schedule as Eyes polling (slowing with age, backing off on errors), but for the GitHub PR. */
     public long nextPullPollAt(long now) {
-        long unit = minPollMillis();
-        long age = now - registeredAt;
-        long interval = age < 3_600_000L ? unit : age < 86_400_000L ? 5 * unit : 30 * unit;
-        if (pullFailures > 0) {
-            interval = Math.min(Math.max(interval, unit) << Math.min(pullFailures, 10), 60 * unit);
-        }
-        return lastPullPolledAt + interval;
+        return nextPullPollAt(now, PollSchedule.current());
+    }
+
+    public long nextPullPollAt(long now, PollSchedule schedule) {
+        return lastPullPolledAt + schedule.interval(now - registeredAt, pullFailures);
     }
 
     @CheckForNull

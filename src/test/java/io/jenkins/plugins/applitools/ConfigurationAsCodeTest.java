@@ -48,6 +48,13 @@ class ConfigurationAsCodeTest {
         assertThat(config.isApiKeyInQuery(), is(true));
         assertThat(config.isHideReviewers(), is(true));
         assertThat(config.isLockDesignReview(), is(true));
+        assertThat(config.getReviewPollSeconds(), is(30));
+        assertThat(config.getReviewSlowAfterMinutes(), is(20));
+        assertThat(config.getReviewSlowPollMinutes(), is(2));
+        assertThat(config.getReviewSlowestAfterHours(), is(6));
+        assertThat(config.getReviewSlowestPollMinutes(), is(15));
+        assertThat(config.getSettledRecheckMinutes(), is(10));
+        assertThat(config.getFollowReviewsDays(), is(7));
 
         // ...and what the snippet sets up around it.
         List<StringCredentials> secrets = CredentialsProvider.lookupCredentialsInItemGroup(
@@ -76,6 +83,8 @@ class ConfigurationAsCodeTest {
         assertThat(exported, containsString("designReviewLabel: \"needs-design\""));
         assertThat(exported, containsString("designers: \"team:Tim's Eyes Org, lead@example.com\""));
         assertThat(exported, containsString("mergeCredentialsId: \"applitools-merge-api-key\""));
+        assertThat(exported, containsString("reviewPollSeconds: 30"));
+        assertThat(exported, containsString("followReviewsDays: 7"));
     }
 
     @Test
@@ -94,6 +103,9 @@ class ConfigurationAsCodeTest {
         assertThat(config.isAllowHttp(), is(false));
         assertThat(config.isApiKeyInQuery(), is(false));
         assertThat(config.isLockDesignReview(), is(false));
+        assertThat(config.getReviewPollSeconds(), is(60));
+        assertThat(config.getReviewSlowestPollMinutes(), is(30));
+        assertThat(config.getFollowReviewsDays(), is(14));
 
         assertThat(export(), not(containsString("readCredentialsId")));
     }

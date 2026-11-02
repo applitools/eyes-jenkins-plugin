@@ -4,6 +4,7 @@ import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.contains;
 import static org.hamcrest.Matchers.is;
 
+import io.jenkins.plugins.applitools.ApplitoolsGlobalConfiguration;
 import java.util.List;
 import java.util.Set;
 import org.junit.jupiter.api.Test;
@@ -54,6 +55,66 @@ class WatcherLimitsTest {
 
         r.polled(now, true);
         assertThat(r.nextPollAt(now) - now, is(MIN)); // recovered
+    }
+
+    @Test
+    void scheduleIsConfigurable(JenkinsRule j) {
+        ApplitoolsGlobalConfiguration config = ApplitoolsGlobalConfiguration.get();
+        config.setReviewPollSeconds(20);
+        config.setReviewSlowAfterMinutes(10);
+        config.setReviewSlowPollMinutes(2);
+        config.setReviewSlowestAfterHours(3);
+        config.setReviewSlowestPollMinutes(90);
+        PendingReview r = review("job");
+        long start = r.getRegisteredAt();
+        r.polled(start, true);
+        r.pullPolled(start, true);
+
+        assertThat(r.nextPollAt(start) - start, is(20_000L));
+        assertThat(r.nextPullPollAt(start) - start, is(20_000L)); // GitHub polling follows the same schedule
+        r.setRegisteredAtForTest(start - 11 * MIN);
+        assertThat(r.nextPollAt(start) - start, is(2 * MIN));
+        r.setRegisteredAtForTest(start - 4 * HOUR);
+        assertThat(r.nextPollAt(start) - start, is(90 * MIN));
+        for (int i = 0; i < 20; i++) {
+            r.polled(start, false);
+        }
+        assertThat(r.nextPollAt(start) - start, is(90 * MIN)); // backoff never caps below the slowest interval
+    }
+
+    @Test
+    void scheduleCanOnlyPollLessThanAllowed(JenkinsRule j) {
+        ApplitoolsGlobalConfiguration config = ApplitoolsGlobalConfiguration.get();
+        config.setReviewPollSeconds(1);
+        assertThat(config.getReviewPollSeconds(), is(15));
+
+        config.setReviewPollSeconds(180);
+        config.setReviewSlowPollMinutes(1); // shorter than the first interval
+        config.setReviewSlowestPollMinutes(1);
+        config.setSettledRecheckMinutes(1);
+        PollSchedule schedule = PollSchedule.current();
+        assertThat(schedule.slow(), is(3 * MIN));
+        assertThat(schedule.slowest(), is(3 * MIN));
+        assertThat(schedule.settledRecheck(), is(3 * MIN));
+
+        config.setFollowReviewsDays(0);
+        assertThat(config.getFollowReviewsDays(), is(1));
+        config.setFollowReviewsDays(1000);
+        assertThat(config.getFollowReviewsDays(), is(365));
+    }
+
+    @Test
+    void reviewsAreDroppedAfterTheConfiguredDays(JenkinsRule j) {
+        ApplitoolsGlobalConfiguration.get().setFollowReviewsDays(2);
+        ReviewRegistry registry = ReviewRegistry.get();
+        PendingReview fresh = review("fresh");
+        fresh.setRegisteredAtForTest(System.currentTimeMillis() - DAY);
+        PendingReview stale = review("stale");
+        stale.setRegisteredAtForTest(System.currentTimeMillis() - 3 * DAY);
+        registry.register(fresh);
+        registry.register(stale);
+
+        assertThat(registry.all().stream().map(PendingReview::getJobFullName).toList(), contains("fresh"));
     }
 
     @Test

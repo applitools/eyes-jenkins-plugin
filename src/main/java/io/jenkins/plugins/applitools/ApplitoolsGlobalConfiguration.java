@@ -5,6 +5,7 @@ import com.cloudbees.plugins.credentials.common.StandardListBoxModel;
 import hudson.Extension;
 import hudson.Util;
 import hudson.security.ACL;
+import hudson.util.FormValidation;
 import hudson.util.ListBoxModel;
 import io.jenkins.plugins.applitools.scm.CommitStatusPublisher;
 import java.util.List;
@@ -48,6 +49,25 @@ public class ApplitoolsGlobalConfiguration extends GlobalConfiguration {
     private boolean apiKeyInQuery;
     private boolean hideReviewers;
     private boolean lockDesignReview;
+
+    /** Review polling schedule ({@link io.jenkins.plugins.applitools.review.PollSchedule}); {@code null}: the default. */
+    private Integer reviewPollSeconds;
+    private Integer reviewSlowAfterMinutes;
+    private Integer reviewSlowPollMinutes;
+    private Integer reviewSlowestAfterHours;
+    private Integer reviewSlowestPollMinutes;
+    private Integer settledRecheckMinutes;
+    private Integer followReviewsDays;
+
+    public static final int DEFAULT_REVIEW_POLL_SECONDS = 60;
+    public static final int MIN_REVIEW_POLL_SECONDS = 15;
+    public static final int DEFAULT_REVIEW_SLOW_AFTER_MINUTES = 60;
+    public static final int DEFAULT_REVIEW_SLOW_POLL_MINUTES = 5;
+    public static final int DEFAULT_REVIEW_SLOWEST_AFTER_HOURS = 24;
+    public static final int DEFAULT_REVIEW_SLOWEST_POLL_MINUTES = 30;
+    public static final int DEFAULT_SETTLED_RECHECK_MINUTES = 30;
+    public static final int DEFAULT_FOLLOW_REVIEWS_DAYS = 14;
+    public static final int MAX_FOLLOW_REVIEWS_DAYS = 365;
 
     public static ApplitoolsGlobalConfiguration get() {
         return GlobalConfiguration.all().getInstance(ApplitoolsGlobalConfiguration.class);
@@ -236,6 +256,162 @@ public class ApplitoolsGlobalConfiguration extends GlobalConfiguration {
     public void setLockDesignReview(boolean lockDesignReview) {
         this.lockDesignReview = lockDesignReview;
         save();
+    }
+
+    /** How often to poll a new review, in seconds (at least 15). */
+    public int getReviewPollSeconds() {
+        return reviewPollSeconds != null ? reviewPollSeconds : DEFAULT_REVIEW_POLL_SECONDS;
+    }
+
+    @DataBoundSetter
+    public void setReviewPollSeconds(int reviewPollSeconds) {
+        this.reviewPollSeconds = Math.max(reviewPollSeconds, MIN_REVIEW_POLL_SECONDS);
+        save();
+    }
+
+    /** Age, in minutes, after which a review is polled every {@link #getReviewSlowPollMinutes()}. */
+    public int getReviewSlowAfterMinutes() {
+        return reviewSlowAfterMinutes != null ? reviewSlowAfterMinutes : DEFAULT_REVIEW_SLOW_AFTER_MINUTES;
+    }
+
+    @DataBoundSetter
+    public void setReviewSlowAfterMinutes(int reviewSlowAfterMinutes) {
+        this.reviewSlowAfterMinutes = Math.max(reviewSlowAfterMinutes, 1);
+        save();
+    }
+
+    public int getReviewSlowPollMinutes() {
+        return reviewSlowPollMinutes != null ? reviewSlowPollMinutes : DEFAULT_REVIEW_SLOW_POLL_MINUTES;
+    }
+
+    @DataBoundSetter
+    public void setReviewSlowPollMinutes(int reviewSlowPollMinutes) {
+        this.reviewSlowPollMinutes = Math.max(reviewSlowPollMinutes, 1);
+        save();
+    }
+
+    /** Age, in hours, after which a review is polled every {@link #getReviewSlowestPollMinutes()}. */
+    public int getReviewSlowestAfterHours() {
+        return reviewSlowestAfterHours != null ? reviewSlowestAfterHours : DEFAULT_REVIEW_SLOWEST_AFTER_HOURS;
+    }
+
+    @DataBoundSetter
+    public void setReviewSlowestAfterHours(int reviewSlowestAfterHours) {
+        this.reviewSlowestAfterHours = Math.max(reviewSlowestAfterHours, 1);
+        save();
+    }
+
+    public int getReviewSlowestPollMinutes() {
+        return reviewSlowestPollMinutes != null ? reviewSlowestPollMinutes : DEFAULT_REVIEW_SLOWEST_POLL_MINUTES;
+    }
+
+    @DataBoundSetter
+    public void setReviewSlowestPollMinutes(int reviewSlowestPollMinutes) {
+        this.reviewSlowestPollMinutes = Math.max(reviewSlowestPollMinutes, 1);
+        save();
+    }
+
+    /** How often, in minutes, a fully reviewed open PR is re-read, in case a reviewer changes their mind in Eyes. */
+    public int getSettledRecheckMinutes() {
+        return settledRecheckMinutes != null ? settledRecheckMinutes : DEFAULT_SETTLED_RECHECK_MINUTES;
+    }
+
+    @DataBoundSetter
+    public void setSettledRecheckMinutes(int settledRecheckMinutes) {
+        this.settledRecheckMinutes = Math.max(settledRecheckMinutes, 1);
+        save();
+    }
+
+    /** How many days to follow a review before dropping it (1 to 365). */
+    public int getFollowReviewsDays() {
+        return followReviewsDays != null ? followReviewsDays : DEFAULT_FOLLOW_REVIEWS_DAYS;
+    }
+
+    @DataBoundSetter
+    public void setFollowReviewsDays(int followReviewsDays) {
+        this.followReviewsDays = Math.min(Math.max(followReviewsDays, 1), MAX_FOLLOW_REVIEWS_DAYS);
+        save();
+    }
+
+    @POST
+    public FormValidation doCheckReviewPollSeconds(@QueryParameter String value) {
+        Integer n = parse(value);
+        if (n == null || n < MIN_REVIEW_POLL_SECONDS) {
+            return FormValidation.error("At least " + MIN_REVIEW_POLL_SECONDS + " seconds.");
+        }
+        return n > 60
+                ? FormValidation.warning("Reviews are first checked in Eyes " + n + " seconds after the build.")
+                : FormValidation.ok();
+    }
+
+    @POST
+    public FormValidation doCheckReviewSlowPollMinutes(
+            @QueryParameter String value, @QueryParameter String reviewPollSeconds) {
+        Integer n = parse(value);
+        Integer first = parse(reviewPollSeconds);
+        if (n == null || n < 1) {
+            return FormValidation.error("At least 1 minute.");
+        }
+        return first != null && n * 60 < first
+                ? FormValidation.warning("Shorter than the first interval, so the first interval is used.")
+                : FormValidation.ok();
+    }
+
+    @POST
+    public FormValidation doCheckReviewSlowestPollMinutes(
+            @QueryParameter String value, @QueryParameter String reviewSlowPollMinutes) {
+        Integer n = parse(value);
+        Integer slow = parse(reviewSlowPollMinutes);
+        if (n == null || n < 1) {
+            return FormValidation.error("At least 1 minute.");
+        }
+        return slow != null && n < slow
+                ? FormValidation.warning("Shorter than the previous interval, so that one is used.")
+                : FormValidation.ok();
+    }
+
+    @POST
+    public FormValidation doCheckReviewSlowestAfterHours(
+            @QueryParameter String value, @QueryParameter String reviewSlowAfterMinutes) {
+        Integer n = parse(value);
+        Integer slowAfter = parse(reviewSlowAfterMinutes);
+        if (n == null || n < 1) {
+            return FormValidation.error("At least 1 hour.");
+        }
+        return slowAfter != null && n * 60 <= slowAfter
+                ? FormValidation.warning("Not after the previous step, so reviews skip straight to this interval.")
+                : FormValidation.ok();
+    }
+
+    @POST
+    public FormValidation doCheckReviewSlowAfterMinutes(@QueryParameter String value) {
+        return positive(value, "minute");
+    }
+
+    @POST
+    public FormValidation doCheckSettledRecheckMinutes(@QueryParameter String value) {
+        return positive(value, "minute");
+    }
+
+    @POST
+    public FormValidation doCheckFollowReviewsDays(@QueryParameter String value) {
+        Integer n = parse(value);
+        return n == null || n < 1 || n > MAX_FOLLOW_REVIEWS_DAYS
+                ? FormValidation.error("From 1 to " + MAX_FOLLOW_REVIEWS_DAYS + " days.")
+                : FormValidation.ok();
+    }
+
+    private static FormValidation positive(String value, String unit) {
+        Integer n = parse(value);
+        return n == null || n < 1 ? FormValidation.error("At least 1 " + unit + ".") : FormValidation.ok();
+    }
+
+    private static Integer parse(String value) {
+        try {
+            return Integer.valueOf(Util.fixNull(value).trim());
+        } catch (NumberFormatException e) {
+            return null;
+        }
     }
 
     /** Secret text credential with an Eyes key allowed to merge baselines; falls back to the run key. */

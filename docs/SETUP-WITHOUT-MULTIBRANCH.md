@@ -16,8 +16,8 @@ You get the same gate: **Visual tests**, **Design review** (label, Eyes-team des
 | GitHub access | A GitHub App | **A token** (Secret text credential) |
 | Results on the PR | Checks (with a details page) | **Commit statuses** (same names and Eyes links) |
 | PR detection | Automatic | Automatic with GitHub Pull Request Builder; otherwise **passed on the step** |
-| Label added after a build | Applied within seconds (webhook) | Applied **within 1–30 minutes** (polled; sooner for recent PRs) |
-| Baseline merge when the PR merges | Within seconds (webhook) | Within 1–30 minutes (polled) |
+| Label added after a build | Applied within seconds (webhook) | Applied **within 1–30 minutes** by default (polled; sooner for recent PRs) |
+| Baseline merge when the PR merges | Within seconds (webhook) | Within 1–30 minutes by default (polled) |
 | Webhooks to Jenkins | Required | **Not required** for the gate (your trigger may need its own) |
 
 If the GitHub plugin happens to be installed and receives webhooks, label changes and merges apply instantly here too.
@@ -212,4 +212,4 @@ Same as [Try it](SETUP.md#9-try-it) in the setup guide, with two differences: re
 | Setup page: **"GitHub with a token … HTTP 401 / 403 / 404"** | The token is wrong, expired, or can't access the repository. Check its permissions (step 2). |
 | Checkout fails: **"Authentication failed"** or **"repository not found"** (private repo) | The checkout needs `credentialsId: 'github-token'` on a **Username with password** credential, and the token needs **Contents: read-only** on the repository. |
 | Statuses land on the wrong commit | `commit:` must be the PR's **head** commit (`pull_request.head.sha`), not a merge commit. |
-| A label change takes a while | Expected without webhooks: PRs are polled every minute in their first hour, every 5 minutes for the rest of the day, then every 30 minutes. |
+| A label change takes a while | Expected without webhooks: By default, PRs are polled every minute in their first hour, every 5 minutes for the rest of the day, then every 30 minutes. Change it under **Review polling** in Manage Jenkins → System ([Polling schedule](OPERATIONS.md#polling-schedule)). |

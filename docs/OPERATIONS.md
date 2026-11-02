@@ -19,24 +19,24 @@ What the plugin costs a Jenkins controller in memory, threads, network and disk,
 | Activity | When | Cost |
 | --- | --- | --- |
 | **During the build** | When the `applitools` block ends | Closes the batch, then polls Eyes every 5 s until rendering finishes (at most `resultsTimeout`, default 300 s, so ≤ 60 small requests). Runs on the build's own executor, like any build step. |
-| **Review watcher** | A background pass once a minute | Re-reads Eyes for builds whose changes are still waiting on reviewers, and updates the PR checks. |
+| **Review watcher** | A background pass once a minute (as often as every 15 s if the polling schedule is set below a minute) | Re-reads Eyes for builds whose changes are still waiting on reviewers, and updates the PR checks. |
 | **Label and merge webhooks** | When GitHub sends them | One short task on the plugin's own two threads, which reads the PR from GitHub (one API call) and acts on that, never on the webhook's own content. A merge polls Eyes every 5 s, for at most 10 minutes, and runs at most once per build. |
 
 ### Which builds the watcher follows
 
 - **Only pull request builds,** and only while they can still change. Branch builds (e.g. `main`) post their results when the build ends and aren't followed afterwards: nobody reviews them, so following them would hold results that never settle. (Opt in with **Keep updating results for branch builds** in Manage Jenkins → System.)
-- **An open PR stays followed even when fully reviewed,** so label changes, its merge, and a reviewer changing their mind in Eyes still update it. Fully reviewed PRs are re-read from Eyes only every 30 minutes.
+- **An open PR stays followed even when fully reviewed,** so label changes, its merge, and a reviewer changing their mind in Eyes still update it. Fully reviewed PRs are re-read from Eyes only every 30 minutes (configurable).
 - **One per job.** A new build of a PR or branch replaces the older one.
-- **Dropped automatically,** checked on every pass without network calls: when its build is deleted, when its job is gone or disabled (Jenkins disables the jobs of closed PRs and deleted branches), when its job has a newer finished build, when the PR closes, or after **14 days**. Before dropping a closed PR, the plugin asks GitHub whether it **merged**; if so, it runs the baseline merge the missed webhook would have run.
+- **Dropped automatically,** checked on every pass without network calls: when its build is deleted, when its job is gone or disabled (Jenkins disables the jobs of closed PRs and deleted branches), when its job has a newer finished build, when the PR closes, or after **14 days** (configurable, 1 to 365). Before dropping a closed PR, the plugin asks GitHub whether it **merged**; if so, it runs the baseline merge the missed webhook would have run.
 - **At most 500.** Beyond that, the longest-followed are dropped (and a warning is logged).
 
 ## How polling is bounded
 
 | Fallback | Behavior |
 | --- | --- |
-| **Polling slows with age** | Every minute for the first hour, every 5 minutes for the rest of the first day, every 30 minutes after that. Reviewers rarely act on week-old PRs. |
-| **Backoff on errors** | After consecutive Eyes errors (outage, timeouts), the interval doubles each time, up to an hour. One success resets it. |
-| **Time budget per pass** | A pass stops after 50 s. The builds polled longest ago go first, so none starve. |
+| **Polling slows with age** | By default, every minute for the first hour, every 5 minutes for the rest of the first day, every 30 minutes after that. Reviewers rarely act on week-old PRs. See [Polling schedule](#polling-schedule) to change it. |
+| **Backoff on errors** | After consecutive Eyes errors (outage, timeouts), the interval doubles each time, up to an hour (or the slowest interval, if that's longer). One success resets it. |
+| **Time budget per pass** | A pass stops after 50 s (five sixths of the time between passes when that's under a minute, at least 10 s). The builds polled longest ago go first, so none starve. |
 | **No overlapping passes** | Jenkins never starts a pass while the previous one is still running. |
 | **One shared HTTP client** | All Eyes calls share one connection pool and selector thread, rather than creating them per request. |
 | **Compressed responses** | Eyes responses are requested gzipped: 6× less traffic. |
@@ -101,17 +101,33 @@ These PRs are also polled on GitHub (same schedule: 1, 5, then 30 minutes), to c
 - **Registry file:** `$JENKINS_HOME/io.jenkins.plugins.applitools.review.ReviewRegistry.xml`, ~1.2 KB per followed build (≤ ~600 KB at the cap). Written only when something changes.
 - **Build records:** ~500 bytes per test in each build's `build.xml`.
 
+## Polling schedule
+
+Set under **Manage Jenkins → System → Applitools Eyes → Review polling**, or with [Configuration as Code](CONFIGURATION-AS-CODE.md#every-applitools-setting). The same schedule applies to reading pull requests from GitHub for jobs that report with a token.
+
+| Setting | Default | Allowed |
+| --- | --- | --- |
+| Check every (seconds) | 60 | At least 15 |
+| Slow down after (minutes) | 60 | At least 1 |
+| Then check every (minutes) | 5 | At least 1; never shorter than the first interval |
+| Slow down again after (hours) | 24 | At least 1; if it isn't after the previous step, reviews skip straight to this interval |
+| Then check every (minutes) | 30 | At least 1; never shorter than the previous interval |
+| Recheck fully reviewed pull requests every (minutes) | 30 | At least 1; never shorter than the first interval |
+| Stop following a review after (days) | 14 | 1 to 365 |
+
+A later interval set shorter than an earlier one is raised to match, so the schedule can only check less often than its first interval, never more. The figures in [Network: calculated](#network-calculated) assume the defaults. Cost scales with how often reviews are checked: halving every interval roughly doubles the Eyes traffic, and checking every 15 s instead of every minute quadruples it for the first part of the schedule. Following reviews for more days adds slow polls of old reviews, and the 500-build cap still applies.
+
 ## Tuning
 
-All limits are Java system properties, set on the controller's command line (`-D…`, e.g. in `JAVA_OPTS`). The defaults suit most installations.
+All other limits are Java system properties, set on the controller's command line (`-D…`, e.g. in `JAVA_OPTS`). The defaults suit most installations.
 
 | Property | Default | Effect |
 | --- | --- | --- |
-| `io.jenkins.plugins.applitools.review.PendingReview.minPollSeconds` | `60` | Base polling interval. The others scale from it: ×5 after an hour, ×30 after a day, backoff up to ×60. |
-| `io.jenkins.plugins.applitools.ReviewWatcher.budgetSeconds` | `50` | Most time a watcher pass may spend |
-| `io.jenkins.plugins.applitools.ReviewWatcher.periodSeconds` | `60` | How often a pass runs |
+| `io.jenkins.plugins.applitools.review.PendingReview.minPollSeconds` | not set | Overrides the polling schedule with the old fixed one, scaled from this base interval: ×5 after an hour, ×30 after a day, backoff up to an hour. Meant for tests. |
+| `io.jenkins.plugins.applitools.ReviewWatcher.budgetSeconds` | `50` (less for schedules under a minute) | Most time a watcher pass may spend |
+| `io.jenkins.plugins.applitools.ReviewWatcher.periodSeconds` | `15` | How often the watcher wakes. A pass only runs as often as the first polling interval, at most once a minute. |
 | `io.jenkins.plugins.applitools.review.ReviewRegistry.maxReviews` | `500` | Most builds followed at once |
-| `io.jenkins.plugins.applitools.review.ReviewRegistry.maxAgeDays` | `14` | Followed builds older than this are dropped |
+| `io.jenkins.plugins.applitools.review.ReviewRegistry.maxAgeDays` | not set | Overrides **Stop following a review after (days)** |
 | `io.jenkins.plugins.applitools.BaselineMerge.timeoutSeconds` | `600` | Longest wait for an Eyes baseline merge |
 
 The `applitools` step's `resultsTimeout` option (default 300 s) bounds how long a build waits for Eyes to finish rendering.
