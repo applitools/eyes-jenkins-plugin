@@ -24,7 +24,7 @@ There are two versions of the main file, one per setup:
 jenkins/
 ├── Dockerfile
 ├── plugins.txt
-├── applitools-jenkins.hpi      # the plugin, until it's published
+├── applitools-jenkins.hpi      # the plugin, from the latest release (below)
 ├── jenkins.yaml                # step 3
 ├── compose.yaml
 ├── .env                        # secrets; never commit it
@@ -45,6 +45,12 @@ COPY plugins.txt /usr/share/jenkins/ref/plugins.txt
 RUN jenkins-plugin-cli --plugin-file /usr/share/jenkins/ref/plugins.txt
 # .override: replace the installed copy on every rebuild, even at the same version.
 COPY applitools-jenkins.hpi /usr/share/jenkins/ref/plugins/applitools-jenkins.jpi.override
+```
+
+Download the plugin next to the `Dockerfile` from the [latest release](https://github.com/applitools/eyes-jenkins-plugin/releases/latest):
+
+```bash
+curl -fLO https://github.com/applitools/eyes-jenkins-plugin/releases/latest/download/applitools-jenkins.hpi
 ```
 
 **`plugins.txt`, recommended setup:**

@@ -24,7 +24,7 @@ If the GitHub plugin happens to be installed and receives webhooks, label change
 
 ## 1. Install the plugin
 
-**Manage Jenkins → Plugins**: install the Applitools plugin (until it's published: **Advanced settings → Deploy Plugin** with the `.hpi`). Nothing else is required.
+**Manage Jenkins → Plugins**: install the Applitools plugin: download `applitools-jenkins.hpi` from the [latest release](https://github.com/applitools/eyes-jenkins-plugin/releases/latest) and upload it at **Advanced settings → Deploy Plugin**. Nothing else is required.
 
 ## 2. Create a GitHub token
 

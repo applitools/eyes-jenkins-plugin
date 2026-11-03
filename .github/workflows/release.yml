@@ -1,0 +1,67 @@
+# Builds the plugin and publishes it on the Releases page when a version tag is pushed:
+#
+#   git tag v0.2.0 && git push origin v0.2.0
+#
+# The tag sets the plugin's version (v0.2.0 → 0.2.0). The full test suite and SpotBugs run first; a failure
+# publishes nothing. The release gets applitools-jenkins.hpi and its SHA-256 checksum.
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # create the release and upload the .hpi
+    steps:
+      - name: Check the tag
+        id: version
+        run: |
+          if [[ ! "$GITHUB_REF_NAME" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$ ]]; then
+            echo "::error::Tag $GITHUB_REF_NAME isn't a version like v1.2.3 or v1.2.3-beta.1"
+            exit 1
+          fi
+          echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+
+      # Actions are pinned to commits; Dependabot keeps them current.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: maven
+
+      - name: Build and test
+        run: mvn -B -ntp clean verify -Drevision=${{ steps.version.outputs.version }} -Dchangelist=
+
+      - name: Checksum
+        working-directory: target
+        run: sha256sum applitools-jenkins.hpi > applitools-jenkins.hpi.sha256
+
+      - name: Publish the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          jenkins_version=$(unzip -p target/applitools-jenkins.hpi META-INF/MANIFEST.MF | sed -n 's/^Jenkins-Version: *//p' | tr -d '\r')
+          cat > notes.md <<EOF
+          **Install:** download \`applitools-jenkins.hpi\` below, then in Jenkins open **Manage Jenkins → Plugins → Advanced settings → Deploy Plugin**, upload it, and restart Jenkins. Requires Jenkins ${jenkins_version} or newer. See the [setup guide](https://github.com/${GITHUB_REPOSITORY}/blob/${GITHUB_REF_NAME}/docs/SETUP.md).
+
+          **Verify the download:** \`sha256sum -c applitools-jenkins.hpi.sha256\`
+
+          Provided as is, without maintenance commitment, support SLA or upgrade guarantee; see the [README](https://github.com/${GITHUB_REPOSITORY}/blob/${GITHUB_REF_NAME}/README.md#support-and-maintenance).
+          EOF
+          prerelease=()
+          [[ "$VERSION" == *-* ]] && prerelease=(--prerelease)
+          gh release create "$GITHUB_REF_NAME" \
+            target/applitools-jenkins.hpi target/applitools-jenkins.hpi.sha256 \
+            --verify-tag --title "$GITHUB_REF_NAME" --notes-file notes.md --generate-notes "${prerelease[@]}"

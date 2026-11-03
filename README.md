@@ -14,7 +14,7 @@ Every pull request then gets two checks: **Applitools / Visual tests** and **App
 - **Design review on demand:** add the `design-review` label to a PR, and a designer has to approve its visual changes. Optionally, only listed designers count.
 - **Results in Jenkins too:** a summary on the build page and `applitoolsResults()` for your own logic. Changes awaiting review keep the build green; the Applitools PR results are the gate.
 
-**→ [Setup guide](docs/SETUP.md)** (recommended: multibranch + GitHub App, about 30 minutes) · **[Setup without multibranch](docs/SETUP-WITHOUT-MULTIBRANCH.md)** (any job type, just a token) · **[Configuration as Code](docs/CONFIGURATION-AS-CODE.md)** (the whole Jenkins side from one `jenkins.yaml`) · **[Resource usage and limits](docs/OPERATIONS.md)** · **[Security review](docs/SECURITY.md)** (what it can access, findings and fixes)
+**[Download the plugin](https://github.com/applitools/eyes-jenkins-plugin/releases/latest)** (`applitools-jenkins.hpi`) · **→ [Setup guide](docs/SETUP.md)** (recommended: multibranch + GitHub App, about 30 minutes) · **[Setup without multibranch](docs/SETUP-WITHOUT-MULTIBRANCH.md)** (any job type, just a token) · **[Configuration as Code](docs/CONFIGURATION-AS-CODE.md)** (the whole Jenkins side from one `jenkins.yaml`) · **[Resource usage and limits](docs/OPERATIONS.md)** · **[Security review](docs/SECURITY.md)** (what it can access, findings and fixes)
 
 ## Support and maintenance
 
@@ -32,6 +32,8 @@ Test it in your own environment before relying on it, and use it at your own ris
 mvn hpi:run            # Jenkins with the plugin loaded at http://localhost:8080/jenkins
 mvn verify             # build target/applitools-jenkins.hpi and run tests
 ```
+
+**Release:** push a version tag (`git tag v0.2.0 && git push origin v0.2.0`). The [release workflow](.github/workflows/release.yml) runs the full build and tests with that version and publishes `applitools-jenkins.hpi` and its checksum on the Releases page.
 
 | Path | Role |
 | --- | --- |
