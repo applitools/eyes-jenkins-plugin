@@ -33,6 +33,21 @@ Before installing, your team may also want **[Resource usage and limits](docs/OP
 
 The defaults work once the Eyes run key is in place. **[Configuration](docs/CONFIGURATION.md)** lists every setting: the global settings in Manage Jenkins → System (with their Configuration as Code keys), the `applitools` step options, the environment variables the plugin sets, and `applitoolsResults()`.
 
+## Configuration as Code
+
+Every global setting can be set with the [Configuration as Code](https://plugins.jenkins.io/configuration-as-code/) plugin, under `unclassified: applitools:`. Leave out anything you don't change:
+
+```yaml
+unclassified:
+  applitools:
+    credentialsId: applitools-api-key
+    designers: "team:Design, lead@example.com"
+    lockDesignReview: true
+    reviewPollSeconds: 30
+```
+
+The keys are listed in [Configuration](docs/CONFIGURATION.md#global-settings). The [Configuration as Code guide](docs/CONFIGURATION-AS-CODE.md) goes further: it builds the whole Jenkins side from one `jenkins.yaml` (plugins, credentials, the GitHub App, the agent and the job), with two complete files that the plugin's tests load on every build.
+
 ## Support and maintenance
 
 This plugin is provided **as is**, with no commitment of any kind:
