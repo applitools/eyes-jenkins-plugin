@@ -23,3 +23,11 @@ updates:
         exclude-patterns:
           - "io.jenkins.tools.bom:*"
           - "org.jenkins-ci.plugins:plugin"
+  # The release workflow's actions are pinned to commits; this keeps the pins current.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    labels:
+      - dependencies

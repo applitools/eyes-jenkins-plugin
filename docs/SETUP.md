@@ -32,7 +32,7 @@ Setup takes about 30 minutes. Do the steps in order.
 - **GitHub Checks** (posts checks to pull requests)
 - **Pipeline** (if not already installed)
 
-Then install the Applitools plugin. Until it's published, upload the `.hpi` file at **Manage Jenkins → Plugins → Advanced settings → Deploy Plugin**.
+Then install the Applitools plugin: download `applitools-jenkins.hpi` from the [latest release](https://github.com/applitools/eyes-jenkins-plugin/releases/latest) and upload it at **Manage Jenkins → Plugins → Advanced settings → Deploy Plugin**.
 
 Restart Jenkins.
 
