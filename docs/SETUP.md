@@ -221,6 +221,8 @@ Don't require `Applitools / Baseline merge`: it only appears after a pull reques
 
 ## Reference
 
+The essentials are below. For every setting, including the global ones, see [Configuration](CONFIGURATION.md).
+
 ### `applitools` step options
 
 All are optional. In Pipeline, the run key is handled like `withCredentials` handles secrets: masked in the log, encrypted in the build's saved state, and flagged if a script puts it into a Groovy string (`"${env.APPLITOOLS_API_KEY}"`); pass it to tools through the environment instead.
