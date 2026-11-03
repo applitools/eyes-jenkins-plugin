@@ -14,7 +14,24 @@ Every pull request then gets two checks: **Applitools / Visual tests** and **App
 - **Design review on demand:** add the `design-review` label to a PR, and a designer has to approve its visual changes. Optionally, only listed designers count.
 - **Results in Jenkins too:** a summary on the build page and `applitoolsResults()` for your own logic. Changes awaiting review keep the build green; the Applitools PR results are the gate.
 
-**[Download the plugin](https://github.com/applitools/eyes-jenkins-plugin/releases/latest)** (`applitools-jenkins.hpi`) · **→ [Setup guide](docs/SETUP.md)** (recommended: multibranch + GitHub App, about 30 minutes) · **[Setup without multibranch](docs/SETUP-WITHOUT-MULTIBRANCH.md)** (any job type, just a token) · **[Configuration as Code](docs/CONFIGURATION-AS-CODE.md)** (the whole Jenkins side from one `jenkins.yaml`) · **[Resource usage and limits](docs/OPERATIONS.md)** · **[Security review](docs/SECURITY.md)** (what it can access, findings and fixes)
+## Getting started
+
+You'll need Jenkins 2.568.3 or newer, a GitHub repository, and an Applitools Eyes account with visual tests in any SDK.
+
+1. **[Download the plugin](https://github.com/applitools/eyes-jenkins-plugin/releases/latest)** (`applitools-jenkins.hpi`) and install it at **Manage Jenkins → Plugins → Advanced settings → Deploy Plugin**, then restart Jenkins.
+2. **Follow the [setup guide](docs/SETUP.md)** (about 30 minutes). It walks through the GitHub App, the Eyes keys, the job, wrapping your tests in `applitools { }`, and making the checks required. This is the recommended setup: a Multibranch Pipeline with a GitHub App.
+3. **Open a pull request** with a visual change. Both checks appear on it; accept the change in Eyes and they turn green.
+
+Other ways to set it up:
+
+- **[Setup without multibranch](docs/SETUP-WITHOUT-MULTIBRANCH.md):** any job type (plain Pipeline or Freestyle), with just a GitHub token.
+- **[Configuration as Code](docs/CONFIGURATION-AS-CODE.md):** the whole Jenkins side from one `jenkins.yaml`.
+
+Before installing, your team may also want **[Resource usage and limits](docs/OPERATIONS.md)** and the **[Security review](docs/SECURITY.md)** (what the plugin can access, findings and fixes).
+
+## Configuration
+
+The defaults work once the Eyes run key is in place. **[Configuration](docs/CONFIGURATION.md)** lists every setting: the global settings in Manage Jenkins → System (with their Configuration as Code keys), the `applitools` step options, the environment variables the plugin sets, and `applitoolsResults()`.
 
 ## Support and maintenance
 

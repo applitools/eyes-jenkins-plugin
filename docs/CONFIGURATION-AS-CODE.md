@@ -296,7 +296,7 @@ The Jenkinsfile then decides how the job is triggered and which PR it tests: see
 
 ### Every Applitools setting
 
-Everything under `unclassified: applitools:` is optional. Leave out what you don't change.
+Everything under `unclassified: applitools:` is optional. Leave out what you don't change. What each setting does: [Configuration](CONFIGURATION.md#global-settings).
 
 | Key | Default | Same as Manage Jenkins → System |
 | --- | --- | --- |
