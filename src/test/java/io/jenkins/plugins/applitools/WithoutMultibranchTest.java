@@ -5,6 +5,8 @@ import static org.hamcrest.Matchers.contains;
 import static org.hamcrest.Matchers.empty;
 import static org.hamcrest.Matchers.hasItem;
 import static org.hamcrest.Matchers.is;
+import static org.hamcrest.Matchers.not;
+import static org.hamcrest.Matchers.startsWith;
 
 import com.cloudbees.plugins.credentials.CredentialsScope;
 import com.cloudbees.plugins.credentials.SystemCredentialsProvider;
@@ -166,6 +168,62 @@ public class WithoutMultibranchTest {
         assertThat(eyes.merges, contains("acme/web/feature -> acme/web/main (false)"));
         assertThat(github.posted(), hasItem("Applitools / Baseline merge = success | Baselines merged into main"));
         assertThat(ReviewRegistry.get().all(), empty());
+    }
+
+    @Test
+    void mergesBaselinesWithDesignReviewOff() throws Exception {
+        // No Design review result: the PR must still be followed, and its baselines merged.
+        ApplitoolsGlobalConfiguration.get().setDesignReviewCheck(false);
+        eyes.results(SHA, List.of(new FakeTest("s1", "unresolved")));
+        run(step("", "echo 'tests'"), Result.SUCCESS);
+        assertThat(ReviewRegistry.get().all().get(0).isPullRequest(), is(true));
+
+        github.state = "closed";
+        github.merged = true;
+        watcherTick();
+
+        assertThat(eyes.merges, contains("acme/web/feature -> acme/web/main (false)"));
+        assertThat(github.posted(), hasItem("Applitools / Baseline merge = success | Baselines merged into main"));
+        assertThat(github.posted(), not(hasItem(startsWith("Applitools / Design review"))));
+    }
+
+    @Test
+    void mergesBaselinesWhenTheJobIsDeletedFirst() throws Exception {
+        // Multibranch deletes a closed PR's job, possibly before the merge was noticed: merge before it's gone.
+        eyes.results(SHA, List.of(new FakeTest("s1", "unresolved")));
+        WorkflowRun build = run(step("", "echo 'tests'"), Result.SUCCESS);
+        github.state = "closed";
+        github.merged = true;
+
+        build.getParent().delete();
+        for (int i = 0; i < 100 && ReviewRegistry.get().all().size() > 0; i++) {
+            Thread.sleep(50);
+        }
+
+        assertThat(eyes.merges, contains("acme/web/feature -> acme/web/main (false)"));
+        assertThat(github.posted(), hasItem("Applitools / Baseline merge = success | Baselines merged into main"));
+        assertThat(ReviewRegistry.get().all(), empty());
+    }
+
+    @Test
+    void deletingTheJobOfAnOpenPullRequestMergesNothing() throws Exception {
+        eyes.results(SHA, List.of(new FakeTest("s1", "unresolved")));
+        WorkflowRun build = run(step("", "echo 'tests'"), Result.SUCCESS);
+
+        build.getParent().delete();
+        Thread.sleep(500);
+        watcherTick();
+
+        assertThat(eyes.merges, empty());
+        assertThat(ReviewRegistry.get().all(), empty());
+    }
+
+    @Test
+    void checksOffWarnsThatBaselinesWontBeMerged() throws Exception {
+        eyes.results(SHA, List.of(new FakeTest("s1", "unresolved")));
+        WorkflowRun build = run(step(", checks: false", "echo 'tests'"), Result.SUCCESS);
+
+        j.assertLogContains("its Eyes baselines won't be merged when it merges", build);
     }
 
     @Test

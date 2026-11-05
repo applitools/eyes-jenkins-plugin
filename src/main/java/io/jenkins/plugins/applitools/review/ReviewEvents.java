@@ -116,6 +116,9 @@ public final class ReviewEvents {
                 try (ACLContext ignored = ACL.as2(ACL.SYSTEM2)) {
                     Run<?, ?> run = findRun(review);
                     if (run == null) {
+                        // Its job was deleted: a merged PR's baselines were merged then (jobDeleting).
+                        LOGGER.log(Level.INFO, "{0}#{1}: build {2} #{3} is gone; ignoring the webhook",
+                                new Object[] {repoSlug, number, review.getJobFullName(), review.getBuildNumber()});
                         return;
                     }
                     GitHubRestClient.PullState pr = PullRequestStates.of(run, repoSlug, number);
@@ -125,7 +128,7 @@ public final class ReviewEvents {
                         return;
                     }
                     if (!pr.open()) {
-                        closedNow(review, registry, pr.merged(), pr.headRef(), pr.baseRef());
+                        closedNow(review, registry, pr.merged(), pr.headRef(), pr.baseRef(), run);
                         return;
                     }
                     boolean labeled = pr.labels().stream().anyMatch(l -> l.equalsIgnoreCase(review.getLabel()));
@@ -153,7 +156,7 @@ public final class ReviewEvents {
         for (PendingReview review : registry.forPullRequest(repoSlug, number)) {
             work.add(EXECUTOR.submit(() -> {
                 try (ACLContext ignored = ACL.as2(ACL.SYSTEM2)) {
-                    closedNow(review, registry, merged, headRef, baseRef);
+                    closedNow(review, registry, merged, headRef, baseRef, null);
                 } catch (InterruptedException e) {
                     Thread.currentThread().interrupt();
                 } catch (RuntimeException e) {
@@ -164,37 +167,121 @@ public final class ReviewEvents {
         return work;
     }
 
-    /** Merges baselines for a merged PR (if enabled) and drops its review, or keeps it until the merge succeeds. */
+    /**
+     * Called before Jenkins deletes a job. Multibranch deletes a closed PR's job, sometimes before the plugin has
+     * handled the PR's "closed" webhook, or when the webhook never arrived (found by a later scan). Once the job is
+     * gone, so is the build the merge needs (credentials, where to report), so check now, while it still exists:
+     * if a followed PR of this job merged, merge its baselines.
+     */
+    public static List<Future<?>> jobDeleting(Job<?, ?> job) {
+        List<Future<?>> work = new ArrayList<>();
+        ReviewRegistry registry = ReviewRegistry.get();
+        for (PendingReview review : registry.all()) {
+            if (!review.getJobFullName().equals(job.getFullName()) || !review.isPullRequest() || review.isClosed()) {
+                continue;
+            }
+            Run<?, ?> run = job.getBuildByNumber(review.getBuildNumber());
+            String slug = review.getRepoSlug();
+            String number = review.getChangeId();
+            String key = mergeKey(review);
+            if (run == null || slug == null || number == null || !MERGING.add(key)) {
+                continue; // a merge is already running (it holds the build), or there's nothing to merge with
+            }
+            // Holding the key keeps the watcher from dropping the review while its job disappears.
+            work.add(EXECUTOR.submit(() -> {
+                try (ACLContext ignored = ACL.as2(ACL.SYSTEM2)) {
+                    GitHubRestClient.PullState pr = PullRequestStates.of(run, slug, number);
+                    if (pr == null) {
+                        LOGGER.log(Level.WARNING, "{0}#{1}: job {2} was deleted and the PR couldn''t be read from"
+                                + " GitHub, so its Eyes baselines may not be merged",
+                                new Object[] {slug, number, job.getFullName()});
+                    } else if (!pr.open()) {
+                        mergeNow(review, registry, pr.merged(), pr.headRef(), pr.baseRef(), run);
+                    }
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                } catch (Exception e) {
+                    LOGGER.log(Level.WARNING, "Could not check whether " + slug + "#" + number + " merged before its"
+                            + " job was deleted; its Eyes baselines may not be merged", e);
+                } finally {
+                    MERGING.remove(key);
+                }
+            }));
+        }
+        return work;
+    }
+
+    /** True while a baseline merge for this review is running or about to. */
+    public static boolean isMerging(PendingReview review) {
+        return MERGING.contains(mergeKey(review));
+    }
+
+    private static String mergeKey(PendingReview review) {
+        return review.getJobFullName() + "#" + review.getBuildNumber();
+    }
+
+    /**
+     * Merges baselines for a merged PR (if enabled) and drops its review, or keeps it until the merge succeeds. Uses
+     * {@code run} when the caller already has the build, since its job may be deleted meanwhile.
+     */
     private static void closedNow(
             PendingReview review,
             ReviewRegistry registry,
             boolean merged,
             @CheckForNull String headRef,
-            @CheckForNull String baseRef)
+            @CheckForNull String baseRef,
+            @CheckForNull Run<?, ?> run)
             throws InterruptedException {
-        if (!merged || headRef == null || baseRef == null || !review.isMergeBaselinesOnPrMerge()) {
-            registry.remove(review);
-            return;
-        }
-        String key = review.getJobFullName() + "#" + review.getBuildNumber();
+        String key = mergeKey(review);
         if (!MERGING.add(key)) {
             return; // already merging
         }
-        if (!registry.all().contains(review)) {
-            MERGING.remove(key);
-            return; // merged already, by an earlier event
-        }
         try {
-            // Keep following it (without polling) until the merge succeeds, so a retry can find it.
-            review.setSettled(true);
-            review.setClosed(true);
-            registry.saveQuietly();
-            Run<?, ?> run = findRun(review);
-            if (run == null || BaselineMerge.merge(review, run, headRef, baseRef, TaskListener.NULL)) {
-                registry.remove(review);
-            }
+            mergeNow(review, registry, merged, headRef, baseRef, run);
         } finally {
             MERGING.remove(key);
+        }
+    }
+
+    /** {@link #closedNow} for a caller that holds the review's merge key. */
+    private static void mergeNow(
+            PendingReview review,
+            ReviewRegistry registry,
+            boolean merged,
+            @CheckForNull String headRef,
+            @CheckForNull String baseRef,
+            @CheckForNull Run<?, ?> run)
+            throws InterruptedException {
+        String pr = review.getRepoSlug() + "#" + review.getChangeId();
+        if (!merged) {
+            registry.remove(review);
+            return;
+        }
+        if (!review.isMergeBaselinesOnPrMerge()) {
+            LOGGER.log(Level.INFO, "{0} merged; not merging its Eyes baselines (turned off)", pr);
+            registry.remove(review);
+            return;
+        }
+        if (headRef == null || baseRef == null) {
+            LOGGER.log(Level.WARNING, "{0} merged, but GitHub didn''t say its branches; Eyes baselines not merged", pr);
+            registry.remove(review);
+            return;
+        }
+        if (!registry.all().contains(review)) {
+            return; // merged already, by an earlier event
+        }
+        // Keep following it (without polling) until the merge succeeds, so a retry can find it.
+        review.setSettled(true);
+        review.setClosed(true);
+        registry.saveQuietly();
+        Run<?, ?> build = run != null ? run : findRun(review);
+        if (build == null) {
+            LOGGER.log(Level.WARNING, "{0} merged, but build {1} #{2} is gone, so its Eyes baselines weren''t merged"
+                    + " into {3}. Merge them in Eyes (Compare & merge branches).",
+                    new Object[] {pr, review.getJobFullName(), review.getBuildNumber(), baseRef});
+            registry.remove(review);
+        } else if (BaselineMerge.merge(review, build, headRef, baseRef, TaskListener.NULL)) {
+            registry.remove(review);
         }
     }
 

@@ -16,6 +16,8 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 import jenkins.model.Jenkins;
 
 /**
@@ -31,6 +33,8 @@ public class ReviewWatcher extends AsyncPeriodicWork {
      * this is just the fastest interval the schedule allows; waking alone costs no network calls.
      */
     private static final long PERIOD_SECONDS = Long.getLong(ReviewWatcher.class.getName() + ".periodSeconds", 15);
+
+    private static final Logger LOGGER = Logger.getLogger(ReviewWatcher.class.getName());
 
     /** When the last pass ran; a wake-up before the next one is due does nothing. */
     private volatile long lastPassAt;
@@ -149,6 +153,15 @@ public class ReviewWatcher extends AsyncPeriodicWork {
         Job<?, ?> job = Jenkins.get().getItemByFullName(review.getJobFullName(), Job.class);
         Run<?, ?> run = job != null ? job.getBuildByNumber(review.getBuildNumber()) : null;
         if (run == null) {
+            if (ReviewEvents.isMerging(review)) {
+                return true; // its job was just deleted; the merge started then removes it when done
+            }
+            if (review.isClosed()) {
+                LOGGER.log(Level.WARNING, "Stopped retrying the Eyes baseline merge of {0}#{1}: build {2} #{3} is"
+                        + " gone. Merge its baselines in Eyes (Compare & merge branches).",
+                        new Object[] {review.getRepoSlug(), review.getChangeId(), review.getJobFullName(),
+                            review.getBuildNumber()});
+            }
             registry.remove(review);
             return true;
         }

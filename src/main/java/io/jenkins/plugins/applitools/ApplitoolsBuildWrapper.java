@@ -538,7 +538,9 @@ public class ApplitoolsBuildWrapper extends SimpleBuildWrapper {
                 design,
                 expectations(),
                 mergeBaselines,
-                batch.branchName()));
+                batch.branchName(),
+                scm.repoSlug(),
+                scm.changeId()));
     }
 
     /**
@@ -686,6 +688,15 @@ public class ApplitoolsBuildWrapper extends SimpleBuildWrapper {
         /** The Eyes branch the tests ran on; merged into the target branch when the PR merges. */
         @CheckForNull
         private final String eyesBranch;
+        /**
+         * The PR under test ({@code owner/repo} and number), kept apart from the design review settings: a PR is
+         * followed (and its baselines merged) whether or not design review is on. {@code null} in builds that started
+         * before this was recorded, which fall back to the design review settings.
+         */
+        @CheckForNull
+        private final String repoSlug;
+        @CheckForNull
+        private final String changeId;
 
         /** Results, or why there are none (for the check's summary). */
         private record Collected(@CheckForNull BatchResults results, @CheckForNull String problem) {}
@@ -704,8 +715,12 @@ public class ApplitoolsBuildWrapper extends SimpleBuildWrapper {
                 @CheckForNull DesignSettings design,
                 Expectations expectations,
                 @CheckForNull Boolean mergeBaselinesSetting,
-                @CheckForNull String eyesBranch) {
+                @CheckForNull String eyesBranch,
+                @CheckForNull String repoSlug,
+                @CheckForNull String changeId) {
             this.eyesBranch = eyesBranch;
+            this.repoSlug = repoSlug;
+            this.changeId = changeId;
             this.serverUrl = serverUrl;
             this.credentialsId = credentialsId;
             this.readCredentialsId = readCredentialsId;
@@ -754,6 +769,7 @@ public class ApplitoolsBuildWrapper extends SimpleBuildWrapper {
                     VisualTestsCheck.unavailable(
                             build, listener, "`waitForResults: false`, so this build didn't wait for Eyes.", false);
                 }
+                warnNotFollowed(log, "waitForResults: false");
                 return;
             }
             Collected collected = collect(reader(build, eyes, log), log);
@@ -764,12 +780,26 @@ public class ApplitoolsBuildWrapper extends SimpleBuildWrapper {
                 if (checks) {
                     VisualTestsCheck.completed(build, listener, results);
                     track(build, listener, results);
+                } else {
+                    warnNotFollowed(log, "checks: false");
                 }
                 apply(results, build, log);
             } else if (checks) {
                 String problem = collected.problem();
                 VisualTestsCheck.unavailable(
                         build, listener, problem != null ? problem : "Eyes returned no results.", true);
+            }
+        }
+
+        /** Says so when a PR build isn't followed, since its baselines then won't be merged when the PR merges. */
+        private void warnNotFollowed(PrintStream log, String why) {
+            boolean merge = mergeBaselinesSetting != null
+                    ? mergeBaselinesSetting
+                    : ApplitoolsGlobalConfiguration.get().isMergeBaselines();
+            if (changeId != null && merge) {
+                log.println(LOG_PREFIX + "WARNING: " + why + ", so this pull request isn't followed after the build:"
+                        + " its Eyes baselines won't be merged when it merges. Merge them in Eyes (Compare & merge"
+                        + " branches) instead.");
             }
         }
 
@@ -801,8 +831,8 @@ public class ApplitoolsBuildWrapper extends SimpleBuildWrapper {
                     serverUrl,
                     credentialsId,
                     readCredentialsId,
-                    design != null ? design.scm().repoSlug() : null,
-                    design != null ? design.changeId() : null,
+                    repoSlug != null ? repoSlug : design != null ? design.scm().repoSlug() : null,
+                    changeId != null ? changeId : design != null ? design.changeId() : null,
                     design != null ? design.forced() : Boolean.FALSE,
                     design != null && design.byDefault(),
                     design != null ? design.label() : ApplitoolsGlobalConfiguration.DEFAULT_DESIGN_REVIEW_LABEL,
