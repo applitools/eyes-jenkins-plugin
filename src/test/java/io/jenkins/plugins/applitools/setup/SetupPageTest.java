@@ -12,6 +12,7 @@ import io.jenkins.plugins.applitools.ApplitoolsGlobalConfiguration;
 import io.jenkins.plugins.applitools.FakeEyesServerAccess;
 import java.util.List;
 import io.jenkins.plugins.applitools.review.MergeHistory;
+import io.jenkins.plugins.applitools.review.UnmergedBaselines;
 import org.htmlunit.html.HtmlAnchor;
 import org.htmlunit.html.HtmlPage;
 import org.htmlunit.html.HtmlTableRow;
@@ -163,6 +164,34 @@ class SetupPageTest {
         HtmlAnchor link = (HtmlAnchor) rows.get(1).getElementsByTagName("a").get(0);
         assertThat(link.getHrefAttribute(), containsString("/job/web/job/PR-13/4/"));
         assertThat(link.asNormalizedText(), is("acme/web#13"));
+    }
+
+    @Test
+    void unmergedBaselinesAreListed() throws Exception {
+        HtmlPage empty = j.createWebClient().goTo("manage/applitools-setup");
+        assertThat(empty.asNormalizedText(), containsString("None: every merged pull request's baselines are merged."));
+
+        UnmergedBaselines.Item conflict = UnmergedBaselines.get().failed("acme/web", "13", "acme/web/feature",
+                "acme/web/main", MergeHistory.Outcome.CONFLICTS, "2 baseline conflicts",
+                "The same checkpoints changed on `main` too. In Eyes, open **Compare & merge branches**.");
+        UnmergedBaselines.get().commented(conflict, null);
+        UnmergedBaselines.Item refused = UnmergedBaselines.get().failed("acme/web", "14", "acme/web/fix",
+                "acme/web/main", MergeHistory.Outcome.REFUSED, "Eyes refused the baseline merge", "HTTP 403.");
+        UnmergedBaselines.get().commented(refused, "GitHub refused the comment or label (HTTP 403).");
+
+        HtmlPage page = j.createWebClient().goTo("manage/applitools-setup");
+        List<HtmlTableRow> rows = page.getByXPath("//table[@id='applitools-unmerged']/tbody/tr");
+        assertThat(rows.size(), is(2));
+        assertThat(rows.get(0).getAttribute("data-outcome"), is("CONFLICTS"));
+        assertThat(rows.get(0).asNormalizedText(), containsString("acme/web#13"));
+        assertThat(rows.get(0).asNormalizedText(), containsString("acme/web/feature → acme/web/main"));
+        assertThat(rows.get(0).asNormalizedText(), containsString("In Eyes, open Compare & merge branches"));
+        assertThat(rows.get(0).asNormalizedText(), containsString("Posted, labeled"));
+        assertThat(rows.get(1).asNormalizedText(), containsString("Not posted: GitHub refused the comment"));
+
+        ApplitoolsGlobalConfiguration.get().setCommentOnUnmergedBaselines(false);
+        HtmlPage off = j.createWebClient().goTo("manage/applitools-setup");
+        assertThat(off.asNormalizedText(), containsString("Off (Manage Jenkins → System)"));
     }
 
     @Test

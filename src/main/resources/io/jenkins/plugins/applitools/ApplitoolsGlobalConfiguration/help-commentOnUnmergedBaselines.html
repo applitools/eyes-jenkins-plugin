@@ -1,0 +1,9 @@
+<div>
+  When a merged pull request's Eyes baselines couldn't be merged into the target branch (baseline conflicts, a refused or
+  missing merge key, a timeout), the plugin comments on the pull request, which notifies its author and reviewers, and
+  adds the label <code>eyes-baselines-not-merged</code>. The comment says what went wrong and how to fix it. Once a
+  build of the target branch merges the baselines, the comment is updated and the label removed.
+  <p>
+  Needs the GitHub App or token to have <strong>Pull requests: Read and write</strong>. Without it, the problem is
+  logged and shown under <strong>Manage Jenkins → Applitools setup</strong>.
+</div>

@@ -42,6 +42,8 @@ class ConfigurationAsCodeTest {
                 is(List.of("team:Tim's Eyes Org", "lead@example.com")));
         assertThat(config.isDesignReviewByDefault(), is(true));
         assertThat(config.isMergeBaselines(), is(false));
+        assertThat(config.isCommentOnUnmergedBaselines(), is(false));
+        assertThat(config.isUnstableWhileUnmerged(), is(false));
         assertThat(config.isFollowBranchBuilds(), is(true));
         assertThat(config.isAllowForkPullRequests(), is(true));
         assertThat(config.isAllowHttp(), is(true));
@@ -79,6 +81,7 @@ class ConfigurationAsCodeTest {
         assertThat(exported, containsString("serverUrl: \"https://eyes.example.com\""));
         assertThat(exported, containsString("githubReporting: STATUSES"));
         assertThat(exported, containsString("mergeBaselines: false"));
+        assertThat(exported, containsString("unstableWhileUnmerged: false"));
         assertThat(exported, containsString("designReviewByDefault: true"));
         assertThat(exported, containsString("designReviewLabel: \"needs-design\""));
         assertThat(exported, containsString("designers: \"team:Tim's Eyes Org, lead@example.com\""));
@@ -97,6 +100,8 @@ class ConfigurationAsCodeTest {
         assertThat(config.getGithubReporting(), is(CommitStatusPublisher.Mode.AUTO));
         assertThat(config.isDesignReviewCheck(), is(true));
         assertThat(config.isMergeBaselines(), is(true));
+        assertThat(config.isCommentOnUnmergedBaselines(), is(true));
+        assertThat(config.isUnstableWhileUnmerged(), is(true));
         assertThat(config.getDesigners(), is("team:Design"));
         // Security settings default to the safe choice.
         assertThat(config.isAllowForkPullRequests(), is(false));

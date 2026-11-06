@@ -1,0 +1,7 @@
+<div>
+  Each build of the target branch (for example <code>main</code>) retries the baseline merges that haven't happened yet,
+  before its tests run. While one still fails, the build is marked unstable (yellow) and its commit gets a failing
+  <strong>Applitools / Baseline merge</strong> check. When the retry succeeds, the check turns green.
+  <p>
+  Unticked, the retry and the check still happen, but the build result isn't changed.
+</div>

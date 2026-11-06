@@ -510,8 +510,9 @@ public class ApplitoolsBuildWrapper extends SimpleBuildWrapper {
         log.println(LOG_PREFIX + "Server " + server + ", API key from credential '" + credId + "'");
         String eyesBranch = batch.branchName();
         if (!scm.isPullRequest() && eyesBranch != null) {
-            // A branch build, e.g. of main after a PR merged: wait for that PR's baseline merge, and say how it went.
-            BaselineMergeNotes.beforeTests(build, eyesBranch, log);
+            // A branch build, e.g. of main after a PR merged: wait for that PR's baseline merge, say how it went,
+            // and retry the merges into this branch that failed.
+            BaselineMergeNotes.beforeTests(build, eyesBranch, server, credId, listener);
         }
         boolean locked = ApplitoolsGlobalConfiguration.get().isLockDesignReview();
         boolean postChecks = isChecks() || locked;

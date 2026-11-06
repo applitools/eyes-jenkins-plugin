@@ -40,7 +40,9 @@ The **Key** column is the Configuration as Code key. Settings in **Review pollin
 
 | Setting | Key | Default | What it does |
 | --- | --- | --- | --- |
-| When a pull request merges, merge its Eyes baselines into the target branch | `mergeBaselines` | `true` | When a PR merges, the changes accepted on its Eyes branch become the target branch's baselines, so the next build of `main` compares against them. Posted to the PR as **Applitools / Baseline merge**. Merging only ever happens when the PR merges. |
+| When a pull request merges, merge its Eyes baselines into the target branch | `mergeBaselines` | `true` | When a PR merges, the changes accepted on its Eyes branch become the target branch's baselines, so the next build of `main` compares against them. Posted to the PR as **Applitools / Baseline merge**. A merge that fails is retried by every build of the target branch until it succeeds; see [Baseline merges and conflicts](BASELINE-MERGES.md). |
+| When a merged pull request's baselines can't be merged, comment on it and label it | `commentOnUnmergedBaselines` | `true` | Comments on the PR (notifying its author and reviewers) with the reason and the fix, and adds the `eyes-baselines-not-merged` label. Both are updated once the baselines merge. Needs GitHub **Pull requests: Read and write**. |
+| Mark target branch builds unstable until those baselines are merged | `unstableWhileUnmerged` | `true` | While a merged PR's baselines aren't merged, builds of its target branch are unstable (yellow). Their failing **Applitools / Baseline merge** check appears either way. |
 
 ### Review polling
 

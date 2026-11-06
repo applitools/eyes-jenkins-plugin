@@ -27,7 +27,7 @@ The plugin adds an `applitools { }` step that runs your visual tests with Applit
 | Eyes **run** key | Uploading test results; closing the batch | Given to the tests inside the `applitools` block as `APPLITOOLS_API_KEY`; used by the controller to close the batch |
 | Eyes **read** key | Reading results, approvals and Eyes teams | Controller only; never given to tests |
 | Eyes **merge** key | Merging Eyes baselines when a PR merges | Controller only; never given to tests |
-| GitHub App or token | Posting PR checks or commit statuses; reading PR labels and state | Controller only, through the job's own credentials |
+| GitHub App or token | Posting PR checks or commit statuses; reading PR labels and state; commenting on and labeling a merged PR whose Eyes baselines couldn't be merged ([details](BASELINE-MERGES.md)) | Controller only, through the job's own credentials |
 
 **Network.** All requests go out from the Jenkins controller, through Jenkins' proxy settings, and only to:
 - the Eyes server (default `https://eyes.applitools.com`), and
@@ -39,6 +39,7 @@ There is no telemetry and no other outbound traffic. The only inbound traffic is
 - **Global settings:** credential IDs, URLs and options.
 - **Per build:** the Eyes batch's results (test names, browsers, statuses and links to Eyes).
 - **Review registry:** one entry per followed pull request, with job, build number, credential IDs, PR number and review state. There are at most 500 entries, and each is dropped after 14 days by default (an administrator can set 1 to 365).
+- **Baseline merge history and unmerged baselines:** for each merged PR, its repository, number, Eyes branch names, outcome and a link to its build. The history keeps the last 50; a PR stays in the unmerged list until its baselines merge.
 
 **Background work.** After a pull request's build finishes, a background task polls Eyes and GitHub to keep that PR's results current. It runs as Jenkins' system user, but it always looks up credentials as the *job's* own authentication, so it can't use credentials the job couldn't. It uses no build executors. Its limits are described in [OPERATIONS.md](OPERATIONS.md).
 
