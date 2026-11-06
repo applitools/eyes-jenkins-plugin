@@ -31,6 +31,15 @@ public final class LabelEventSubscriberTestAccess {
         return work.size();
     }
 
+    /** Pretends a baseline merge into an Eyes branch is running, until {@link #mergeDone}. */
+    public static void mergeRunning(String repoSlug, String target) {
+        ReviewEvents.testMergeStarted(repoSlug, target);
+    }
+
+    public static void mergeDone(String target) {
+        ReviewEvents.testMergeDone(target);
+    }
+
     /** A copy of a review as if its build were the given pull request (plain test pipelines aren't PRs). */
     public static PendingReview asPullRequest(PendingReview r, String repoSlug, String number) {
         return new PendingReview(

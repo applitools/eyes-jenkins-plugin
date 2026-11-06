@@ -3,6 +3,7 @@ package io.jenkins.plugins.applitools.setup;
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.is;
+import static org.hamcrest.Matchers.matchesPattern;
 
 import com.cloudbees.plugins.credentials.CredentialsScope;
 import com.cloudbees.plugins.credentials.SystemCredentialsProvider;
@@ -10,7 +11,10 @@ import hudson.util.Secret;
 import io.jenkins.plugins.applitools.ApplitoolsGlobalConfiguration;
 import io.jenkins.plugins.applitools.FakeEyesServerAccess;
 import java.util.List;
+import io.jenkins.plugins.applitools.review.MergeHistory;
+import org.htmlunit.html.HtmlAnchor;
 import org.htmlunit.html.HtmlPage;
+import org.htmlunit.html.HtmlTableRow;
 import org.jenkinsci.plugins.plaincredentials.impl.StringCredentialsImpl;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -129,6 +133,36 @@ class SetupPageTest {
         assertThat(text, containsString("allowed to read results"));
         List<?> rows = page.getByXPath("//table[@id='applitools-setup']/tbody/tr");
         assertThat(rows.size() > 5, is(true));
+    }
+
+    @Test
+    void recentBaselineMergesAreListed() throws Exception {
+        HtmlPage empty = j.createWebClient().goTo("manage/applitools-setup");
+        assertThat(empty.asNormalizedText(), containsString("No pull request has merged"));
+
+        MergeHistory.get().add(new MergeHistory.Entry("acme/web", "13", "acme/web/feature", "acme/web/main",
+                MergeHistory.Outcome.MERGED, "Baselines merged into main",
+                "2 baseline changes from `acme/web/feature` now apply to `acme/web/main`.",
+                System.currentTimeMillis() - 60_200, "job/web/job/PR-13/4/", "web » PR-13 #4"));
+        MergeHistory.get().add(new MergeHistory.Entry("acme/web", "14", "acme/web/fix", "acme/web/main",
+                MergeHistory.Outcome.SKIPPED, "Baseline merge skipped: build gone",
+                "Build web/PR-14 #2 was deleted before the merge could run.",
+                System.currentTimeMillis(), null, "web/PR-14 #2"));
+
+        HtmlPage page = j.createWebClient().goTo("manage/applitools-setup");
+        List<HtmlTableRow> rows = page.getByXPath("//table[@id='applitools-merges']/tbody/tr");
+        assertThat(rows.size(), is(2));
+        // Newest first.
+        assertThat(rows.get(0).getAttribute("data-outcome"), is("SKIPPED"));
+        assertThat(rows.get(0).asNormalizedText(), containsString("acme/web#14"));
+        assertThat(rows.get(0).asNormalizedText(), containsString("Baseline merge skipped: build gone"));
+        assertThat(rows.get(0).getElementsByTagName("a").isEmpty(), is(true)); // no build to link to
+        assertThat(rows.get(1).asNormalizedText(), matchesPattern("(?s)1 min \\d+ sec ago.*"));
+        assertThat(rows.get(1).asNormalizedText(), containsString("acme/web/feature → acme/web/main"));
+        assertThat(rows.get(1).asNormalizedText(), containsString("2 baseline changes from acme/web/feature"));
+        HtmlAnchor link = (HtmlAnchor) rows.get(1).getElementsByTagName("a").get(0);
+        assertThat(link.getHrefAttribute(), containsString("/job/web/job/PR-13/4/"));
+        assertThat(link.asNormalizedText(), is("acme/web#13"));
     }
 
     @Test

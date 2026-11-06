@@ -31,6 +31,46 @@
           </tbody>
         </table>
       </j:if>
+      <h2 class="jenkins-!-margin-top-5">Recent baseline merges</h2>
+      <p class="jenkins-description">
+        What happened to each merged pull request's Eyes baselines, newest first (the last 50 are kept): merged, nothing
+        to merge, failed or skipped, with what to do. The next build of the target branch also prints these in its
+        console, and the result is posted to the pull request as the Applitools / Baseline merge check.
+      </p>
+      <j:set var="merges" value="${it.recentMerges}"/>
+      <j:choose>
+        <j:when test="${merges.isEmpty()}">
+          <p id="applitools-merges-empty">No pull request has merged since this was installed.</p>
+        </j:when>
+        <j:otherwise>
+          <table class="jenkins-table" id="applitools-merges">
+            <thead>
+              <tr><th>When</th><th>Pull request</th><th>Eyes branches</th><th>Result</th><th>Details</th></tr>
+            </thead>
+            <tbody>
+              <j:forEach var="m" items="${merges}">
+                <tr data-outcome="${m.outcome}">
+                  <td data="${m.time}" title="${m.date}">${h.getTimeSpanString(m.date)} ago</td>
+                  <td>
+                    <j:choose>
+                      <j:when test="${m.buildUrl != null}"><a href="${rootURL}/${m.buildUrl}">${m.pullRequestName}</a></j:when>
+                      <j:otherwise>${m.pullRequestName}</j:otherwise>
+                    </j:choose>
+                  </td>
+                  <td>${m.source != null ? m.source : '?'} → ${m.target != null ? m.target : '?'}</td>
+                  <td>
+                    <span style="color: var(${m.outcome.ok ? '--success-color' : '--warning-color'})">
+                      <l:icon src="${m.outcome.ok ? 'symbol-checkmark-circle plugin-ionicons-api' : 'symbol-warning plugin-ionicons-api'}" class="icon-sm"/>
+                    </span>
+                    ${m.title}
+                  </td>
+                  <td>${m.plainSummary}</td>
+                </tr>
+              </j:forEach>
+            </tbody>
+          </table>
+        </j:otherwise>
+      </j:choose>
     </l:main-panel>
   </l:layout>
 </j:jelly>

@@ -3,6 +3,8 @@ package io.jenkins.plugins.applitools;
 import edu.umd.cs.findbugs.annotations.NonNull;
 import hudson.model.Run;
 import hudson.model.TaskListener;
+import io.jenkins.plugins.applitools.review.MergeHistory;
+import io.jenkins.plugins.applitools.review.MergeHistory.Outcome;
 import io.jenkins.plugins.applitools.review.PendingReview;
 import io.jenkins.plugins.checks.api.ChecksConclusion;
 import io.jenkins.plugins.checks.api.ChecksDetails;
@@ -62,8 +64,10 @@ public final class BaselineMerge {
         String target = slug + "/" + baseRef;
         String key = mergeKey(run, review);
         if (key == null) {
-            report(run, listener, ChecksConclusion.FAILURE, "Baseline merge skipped",
-                    "No Eyes API key credential was available to merge `" + source + "` into `" + target + "`.");
+            report(review, run, listener, source, target, Outcome.NO_KEY, "Baseline merge skipped",
+                    "No Eyes API key credential was available to merge `" + source + "` into `" + target + "`. Add an"
+                            + " Eyes merge key as a Secret text credential `"
+                            + ApplitoolsGlobalConfiguration.DEFAULT_MERGE_CREDENTIALS_ID + "`.");
             return false;
         }
         EyesClient eyes = new EyesClient(review.getServerUrl(), key);
@@ -72,7 +76,7 @@ public final class BaselineMerge {
             long deadline = System.currentTimeMillis() + timeoutMillis;
             while (!eyes.isTaskDone(jobId)) {
                 if (System.currentTimeMillis() > deadline) {
-                    report(run, listener, ChecksConclusion.FAILURE, "Baseline merge timed out",
+                    report(review, run, listener, source, target, Outcome.TIMED_OUT, "Baseline merge timed out",
                             "Eyes was still merging `" + source + "` into `" + target + "` after "
                                     + TimeUnit.MILLISECONDS.toSeconds(timeoutMillis) + "s. Check the branch in Eyes.");
                     return false;
@@ -81,29 +85,30 @@ public final class BaselineMerge {
             }
             EyesClient.MergeResult result = eyes.taskResult(jobId);
             if (result.conflicts() > 0) {
-                report(run, listener, ChecksConclusion.FAILURE,
+                report(review, run, listener, source, target, Outcome.CONFLICTS,
                         result.conflicts() + " baseline conflict" + (result.conflicts() == 1 ? "" : "s"),
                         "The same checkpoints changed on `" + baseRef + "` too. Resolve them in Eyes under **Compare &"
                                 + " merge branches** (`" + source + "` → `" + target + "`).");
                 return false;
             } else if (result.merged()) {
-                report(run, listener, ChecksConclusion.SUCCESS, "Baselines merged into " + baseRef,
+                report(review, run, listener, source, target, Outcome.MERGED, "Baselines merged into " + baseRef,
                         result.changes() + " baseline change" + (result.changes() == 1 ? "" : "s")
                                 + " from `" + source + "` now apply to `" + target + "`.");
             } else {
-                report(run, listener, ChecksConclusion.SUCCESS, "Nothing to merge",
+                report(review, run, listener, source, target, Outcome.NOTHING_TO_MERGE, "Nothing to merge",
                         "`" + source + "` had no baseline changes for `" + target + "`.");
             }
             return true;
         } catch (EyesClient.UnauthorizedException e) {
-            report(run, listener, ChecksConclusion.FAILURE, "Eyes refused the baseline merge",
+            report(review, run, listener, source, target, Outcome.REFUSED, "Eyes refused the baseline merge",
                     "HTTP " + e.getStatus() + ": only Eyes **merge** keys (created for a team and a user) can merge"
                             + " baselines. Add one as a Secret text credential `" + ApplitoolsGlobalConfiguration.DEFAULT_MERGE_CREDENTIALS_ID
                             + "`, or set one in Manage Jenkins → System → Applitools Eyes. Then redeliver the PR's"
                             + " `closed` webhook (GitHub App → Advanced → Recent Deliveries) to retry.");
             return false;
         } catch (IOException e) {
-            report(run, listener, ChecksConclusion.FAILURE, "Baseline merge failed", e.getMessage());
+            report(review, run, listener, source, target, Outcome.FAILED, "Baseline merge failed",
+                    String.valueOf(e.getMessage()));
             return false;
         }
     }
@@ -125,7 +130,16 @@ public final class BaselineMerge {
     }
 
     private static void report(
-            Run<?, ?> run, TaskListener listener, ChecksConclusion conclusion, String title, String summary) {
+            PendingReview review,
+            Run<?, ?> run,
+            TaskListener listener,
+            String source,
+            String target,
+            Outcome outcome,
+            String title,
+            String summary) {
+        MergeHistory.record(review, run, source, target, outcome, title, summary);
+        ChecksConclusion conclusion = outcome.isOk() ? ChecksConclusion.SUCCESS : ChecksConclusion.FAILURE;
         listener.getLogger().println("[Applitools] " + title + ": " + summary);
         LOGGER.log(conclusion == ChecksConclusion.SUCCESS ? Level.INFO : Level.WARNING,
                 "{0}: {1}: {2}", new Object[] {run.getFullDisplayName(), title, summary});

@@ -21,6 +21,7 @@ What the plugin costs a Jenkins controller in memory, threads, network and disk,
 | **During the build** | When the `applitools` block ends | Closes the batch, then polls Eyes every 5 s until rendering finishes (at most `resultsTimeout`, default 300 s, so ≤ 60 small requests). Runs on the build's own executor, like any build step. |
 | **Review watcher** | A background pass once a minute (as often as every 15 s if the polling schedule is set below a minute) | Re-reads Eyes for builds whose changes are still waiting on reviewers, and updates the PR checks. |
 | **Label and merge webhooks** | When GitHub sends them | One short task on the plugin's own two threads, which reads the PR from GitHub (one API call) and acts on that, never on the webhook's own content. A merge polls Eyes every 5 s, for at most 10 minutes, and runs at most once per build. |
+| **Target-branch builds** | When a branch build (e.g. `main`, not a PR) starts its `applitools` block | If a baseline merge into that branch is running, or a PR event of the repository is still being read from GitHub, waits for it (checked every 0.5 s, at most 60 s) so the tests compare against the merged baselines. Then prints one line per baseline merge into the branch since its last build. No network calls. |
 
 ### Which builds the watcher follows
 
@@ -29,6 +30,16 @@ What the plugin costs a Jenkins controller in memory, threads, network and disk,
 - **One per job.** A new build of a PR or branch replaces the older one.
 - **Dropped automatically,** checked on every pass without network calls: when its build is deleted, when its job is gone or disabled (Jenkins disables the jobs of closed PRs and deleted branches), when its job has a newer finished build, when the PR closes, or after **14 days** (configurable, 1 to 365). Before dropping a closed PR, the plugin asks GitHub whether it **merged**; if so, it runs the baseline merge the missed webhook would have run. The same check runs just before Jenkins deletes a PR's job (multibranch deletes the jobs of closed PRs), since the merge needs the PR's build.
 - **At most 500.** Beyond that, the longest-followed are dropped (and a warning is logged).
+
+## Where baseline merge outcomes show up
+
+Every outcome (merged, nothing to merge, conflicts, timed out, key refused, or skipped, for example because the PR's build was deleted first or GitHub didn't say its branches) is recorded in three places in Jenkins:
+
+- **Manage Jenkins → Applitools setup → Recent baseline merges:** the last 50 outcomes, newest first, with the PR, its Eyes branches, the result and what to do. Kept in `$JENKINS_HOME/io.jenkins.plugins.applitools.review.MergeHistory.xml`, so it survives restarts.
+- **The next build of the target branch** prints a line per merge into that branch since its previous build, before its tests start, e.g. `[Applitools] Baseline merge from PR #13: Baselines merged into main. 2 baseline changes from acme/web/feature now apply to acme/web/main.` A merge that failed or was skipped prints a `WARNING:` line with the fix and a link to the PR's build. If a merge into the branch is still running, the build waits for it (at most 60 s) and says so.
+- **Manage Jenkins → System Log:** a line for every merge, and for every skip, with the reason.
+
+On GitHub, the outcome is the **Applitools / Baseline merge** check (or status) on the PR's last tested commit. A merge that's turned off (`mergeBaselines: false`, or globally) is listed on the setup page but not printed in builds.
 
 ## How polling is bounded
 
@@ -129,6 +140,8 @@ All other limits are Java system properties, set on the controller's command lin
 | `io.jenkins.plugins.applitools.review.ReviewRegistry.maxReviews` | `500` | Most builds followed at once |
 | `io.jenkins.plugins.applitools.review.ReviewRegistry.maxAgeDays` | not set | Overrides **Stop following a review after (days)** |
 | `io.jenkins.plugins.applitools.BaselineMerge.timeoutSeconds` | `600` | Longest wait for an Eyes baseline merge |
+| `io.jenkins.plugins.applitools.BaselineMergeNotes.waitSeconds` | `60` | Longest a target-branch build waits, before its tests, for a running baseline merge into its branch |
+| `io.jenkins.plugins.applitools.review.MergeHistory.maxEntries` | `50` | Baseline merge outcomes kept for **Recent baseline merges** and target-branch builds |
 
 The `applitools` step's `resultsTimeout` option (default 300 s) bounds how long a build waits for Eyes to finish rendering.
 
