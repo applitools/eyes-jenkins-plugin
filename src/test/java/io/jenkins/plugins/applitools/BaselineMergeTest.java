@@ -5,13 +5,16 @@ import static org.hamcrest.Matchers.contains;
 import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.empty;
 import static org.hamcrest.Matchers.is;
+import static org.hamcrest.Matchers.nullValue;
 
 import com.cloudbees.plugins.credentials.CredentialsScope;
 import com.cloudbees.plugins.credentials.SystemCredentialsProvider;
 import hudson.model.Result;
 import hudson.util.Secret;
 import io.jenkins.plugins.applitools.FakeEyesServer.FakeTest;
+import hudson.model.queue.QueueTaskFuture;
 import io.jenkins.plugins.applitools.review.LabelEventSubscriberTestAccess;
+import io.jenkins.plugins.applitools.review.MergeHistory;
 import io.jenkins.plugins.applitools.review.PendingReview;
 import io.jenkins.plugins.applitools.review.ReviewRegistry;
 import io.jenkins.plugins.checks.api.ChecksConclusion;
@@ -21,6 +24,7 @@ import java.util.List;
 import org.jenkinsci.plugins.plaincredentials.impl.StringCredentialsImpl;
 import org.jenkinsci.plugins.workflow.cps.CpsFlowDefinition;
 import org.jenkinsci.plugins.workflow.job.WorkflowJob;
+import org.jenkinsci.plugins.workflow.job.WorkflowRun;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -194,5 +198,161 @@ public class BaselineMergeTest {
         LabelEventSubscriberTestAccess.mergedAndWait("acme/web", "7", true, "feature", "main");
 
         assertThat(eyes.merges, contains("acme/web/feature -> acme/web/main (false)"));
+    }
+
+    /** A build of the target branch, as the push of a PR's merge starts it. */
+    private WorkflowRun mainBuild(WorkflowJob job) throws Exception {
+        return j.assertBuildStatus(Result.SUCCESS, job.scheduleBuild2(0));
+    }
+
+    private WorkflowJob mainJob() throws Exception {
+        eyes.results("main", List.of(new FakeTest("s1", "passed")));
+        WorkflowJob job = j.createProject(WorkflowJob.class, "web-main");
+        job.setDefinition(new CpsFlowDefinition(
+                "applitools(batchId: 'main', repo: 'acme/web', branch: 'main') { echo 'tests' }", true));
+        return job;
+    }
+
+    private static MergeHistory.Entry lastMerge() {
+        return MergeHistory.get().recent().get(0);
+    }
+
+    @Test
+    void outcomesAreRecorded() throws Exception {
+        LabelEventSubscriberTestAccess.mergedAndWait("acme/web", "7", true, "feature/login", "main");
+
+        MergeHistory.Entry merged = lastMerge();
+        assertThat(merged.getOutcome(), is(MergeHistory.Outcome.MERGED));
+        assertThat(merged.getPullRequestName(), is("acme/web#7"));
+        assertThat(merged.getSource(), is("acme/web/feature/login"));
+        assertThat(merged.getTarget(), is("acme/web/main"));
+        assertThat(merged.getTitle(), is("Baselines merged into main"));
+        assertThat(merged.getBuildUrl(), is("job/test0/1/"));
+    }
+
+    @Test
+    void refusedKeyIsRecorded() throws Exception {
+        eyes.requiredMergeKey = "some-other-key";
+
+        LabelEventSubscriberTestAccess.mergedAndWait("acme/web", "7", true, "feature", "main");
+
+        assertThat(lastMerge().getOutcome(), is(MergeHistory.Outcome.REFUSED));
+        assertThat(lastMerge().getPlainSummary(), containsString("applitools-merge-api-key"));
+    }
+
+    @Test
+    void goneBuildIsRecordedAsSkipped() throws Exception {
+        j.jenkins.getItemByFullName("test0", WorkflowJob.class).getBuildByNumber(1).delete();
+
+        LabelEventSubscriberTestAccess.mergedAndWait("acme/web", "7", true, "feature", "main");
+
+        assertThat(eyes.merges, empty());
+        assertThat(lastMerge().getOutcome(), is(MergeHistory.Outcome.SKIPPED));
+        assertThat(lastMerge().getTitle(), is("Baseline merge skipped: build gone"));
+        assertThat(lastMerge().getTarget(), is("acme/web/main"));
+        assertThat(lastMerge().getBuildUrl(), is(nullValue()));
+    }
+
+    @Test
+    void unknownBranchesAreRecordedAsSkipped() throws Exception {
+        LabelEventSubscriberTestAccess.mergedAndWait("acme/web", "7", true, null, null);
+
+        assertThat(lastMerge().getTitle(), is("Baseline merge skipped: branches unknown"));
+    }
+
+    @Test
+    void turnedOffIsRecorded() throws Exception {
+        ApplitoolsGlobalConfiguration.get().setMergeBaselines(false);
+
+        LabelEventSubscriberTestAccess.mergedAndWait("acme/web", "7", true, "feature", "main");
+
+        assertThat(lastMerge().getOutcome(), is(MergeHistory.Outcome.TURNED_OFF));
+    }
+
+    @Test
+    void nextBuildOfTheTargetBranchPrintsTheMergeOnce() throws Exception {
+        WorkflowJob main = mainJob();
+        mainBuild(main);
+        LabelEventSubscriberTestAccess.mergedAndWait("acme/web", "7", true, "feature", "main");
+
+        WorkflowRun next = mainBuild(main);
+        j.assertLogContains("[Applitools] Baseline merge from PR #7: Baselines merged into main. 2 baseline changes"
+                + " from acme/web/feature now apply to acme/web/main.", next);
+        j.assertLogNotContains("WARNING", next);
+
+        j.assertLogNotContains("Baseline merge from PR #7", mainBuild(main)); // only the first build after it
+    }
+
+    @Test
+    void firstBuildOfTheTargetBranchPrintsEarlierMerges() throws Exception {
+        LabelEventSubscriberTestAccess.mergedAndWait("acme/web", "7", true, "feature", "main");
+
+        j.assertLogContains("Baseline merge from PR #7: Baselines merged into main", mainBuild(mainJob()));
+    }
+
+    @Test
+    void failedMergeWarnsTheTargetBranchBuild() throws Exception {
+        WorkflowJob main = mainJob();
+        mainBuild(main);
+        eyes.mergeResult = "{\"merged\":false,\"conflicts\":2,\"changes\":[]}";
+        LabelEventSubscriberTestAccess.mergedAndWait("acme/web", "7", true, "feature", "main");
+
+        WorkflowRun next = mainBuild(main);
+        j.assertLogContains("[Applitools] WARNING: Baseline merge from PR #7: 2 baseline conflicts. The same"
+                + " checkpoints changed on main too. Resolve them in Eyes under Compare & merge branches", next);
+        j.assertLogContains("PR build: test0 #1", next);
+    }
+
+    @Test
+    void mergesIntoOtherBranchesArentPrinted() throws Exception {
+        WorkflowJob main = mainJob();
+        mainBuild(main);
+        LabelEventSubscriberTestAccess.mergedAndWait("acme/web", "7", true, "feature", "release");
+
+        j.assertLogNotContains("Baseline merge from", mainBuild(main));
+    }
+
+    @Test
+    void targetBranchBuildWaitsForARunningMerge() throws Exception {
+        WorkflowJob main = mainJob();
+        LabelEventSubscriberTestAccess.mergeRunning("acme/web", "acme/web/main");
+        QueueTaskFuture<WorkflowRun> build = main.scheduleBuild2(0);
+        WorkflowRun run = build.waitForStart();
+        j.waitForMessage("is running or about to start; waiting up to 60s for it before the tests start", run);
+        Thread.sleep(700);
+        assertThat(run.isBuilding(), is(true));
+        assertThat(run.getLog().contains("[Pipeline] echo"), is(false)); // the tests haven't started
+
+        LabelEventSubscriberTestAccess.mergeDone("acme/web/main");
+
+        j.assertBuildStatus(Result.SUCCESS, build);
+        j.assertLogContains("[Applitools] Waited ", run);
+    }
+
+    @Test
+    void targetBranchBuildStopsWaitingAfterAWhile() throws Exception {
+        System.setProperty(BaselineMergeNotes.class.getName() + ".waitSeconds", "1");
+        LabelEventSubscriberTestAccess.mergeRunning("acme/web", "acme/web/main");
+        try {
+            WorkflowRun run = mainBuild(mainJob());
+            j.assertLogContains("WARNING: The baseline merge into acme/web/main was still running after 1s", run);
+        } finally {
+            LabelEventSubscriberTestAccess.mergeDone("acme/web/main");
+            System.clearProperty(BaselineMergeNotes.class.getName() + ".waitSeconds");
+        }
+    }
+
+    @Test
+    void pullRequestBuildsDontWait() throws Exception {
+        LabelEventSubscriberTestAccess.mergeRunning("acme/web", "acme/web/main");
+        try {
+            eyes.results("pr", List.of(new FakeTest("s1", "passed")));
+            WorkflowJob job = j.createProject(WorkflowJob.class);
+            job.setDefinition(new CpsFlowDefinition("applitools(batchId: 'pr', repo: 'acme/web', pullRequest: '9',"
+                    + " branch: 'feature', targetBranch: 'main') { echo 'tests' }", true));
+            j.assertLogNotContains("waiting up to", j.assertBuildStatus(Result.SUCCESS, job.scheduleBuild2(0)));
+        } finally {
+            LabelEventSubscriberTestAccess.mergeDone("acme/web/main");
+        }
     }
 }

@@ -15,6 +15,7 @@ import hudson.model.TaskListener;
 import hudson.util.Secret;
 import io.jenkins.plugins.applitools.FakeEyesServer.FakeTest;
 import io.jenkins.plugins.applitools.review.LabelEventSubscriberTestAccess;
+import io.jenkins.plugins.applitools.review.MergeHistory;
 import io.jenkins.plugins.applitools.review.PendingReview;
 import io.jenkins.plugins.applitools.review.ReviewRegistry;
 import io.jenkins.plugins.applitools.scm.GitHubRestClient;
@@ -172,6 +173,36 @@ public class ReconcileTest {
 
         assertThat(eyes.merges, contains("acme/web/feature -> acme/web/main (false)"));
         assertThat(ReviewRegistry.get().all(), empty());
+    }
+
+    @Test
+    void failedMergeWhoseBuildIsDeletedIsRecorded() throws Exception {
+        WorkflowRun run = prBuild(job());
+        eyes.mergeResult = "{\"merged\":false,\"conflicts\":1,\"changes\":[]}";
+        LabelEventSubscriberTestAccess.mergedAndWait("acme/web", "7", true, "feature", "main");
+        assertThat(ReviewRegistry.get().all(), hasSize(1)); // kept for a retry
+
+        run.delete();
+        tick();
+
+        assertThat(ReviewRegistry.get().all(), empty());
+        MergeHistory.Entry last = MergeHistory.get().recent().get(0);
+        assertThat(last.getTitle(), is("Stopped retrying the baseline merge"));
+        assertThat(last.getOutcome(), is(MergeHistory.Outcome.SKIPPED));
+        assertThat(last.getTarget(), is("acme/web/main")); // from the failed attempt
+    }
+
+    @Test
+    void deletedJobWhosePrCantBeReadIsRecorded() throws Exception {
+        WorkflowJob job = job();
+        prBuild(job);
+        FakePrStates.state = null;
+
+        job.delete();
+
+        MergeHistory.Entry last = MergeHistory.get().recent().get(0);
+        assertThat(last.getTitle(), is("Couldn't tell whether the PR merged"));
+        assertThat(last.getPullRequestName(), is("acme/web#7"));
     }
 
     @Test

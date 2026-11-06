@@ -4,8 +4,10 @@ import edu.umd.cs.findbugs.annotations.NonNull;
 import hudson.Extension;
 import hudson.model.ManagementLink;
 import hudson.security.Permission;
+import io.jenkins.plugins.applitools.review.MergeHistory;
 import jakarta.servlet.ServletException;
 import java.io.IOException;
+import java.util.List;
 import jenkins.model.Jenkins;
 import org.kohsuke.stapler.StaplerRequest2;
 import org.kohsuke.stapler.StaplerResponse2;
@@ -45,6 +47,12 @@ public class ApplitoolsSetupLink extends ManagementLink {
     @Override
     public Category getCategory() {
         return Category.STATUS;
+    }
+
+    /** The latest Eyes baseline merge outcomes, newest first, for the page's "Recent baseline merges" table. */
+    public List<MergeHistory.Entry> getRecentMerges() {
+        Jenkins.get().checkPermission(Jenkins.ADMINISTER);
+        return MergeHistory.get().recent();
     }
 
     /**

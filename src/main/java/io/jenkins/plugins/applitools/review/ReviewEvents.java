@@ -1,6 +1,7 @@
 package io.jenkins.plugins.applitools.review;
 
 import edu.umd.cs.findbugs.annotations.CheckForNull;
+import edu.umd.cs.findbugs.annotations.NonNull;
 import hudson.model.Job;
 import hudson.model.Run;
 import hudson.model.TaskListener;
@@ -12,6 +13,8 @@ import io.jenkins.plugins.applitools.scm.GitHubRestClient;
 import io.jenkins.plugins.applitools.scm.PullRequestStates;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
+import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Future;
@@ -74,6 +77,44 @@ public final class ReviewEvents {
     private static final Set<String> MERGING = ConcurrentHashMap.newKeySet();
 
     /**
+     * Baseline merges running or that may be about to, so a build of the target branch can wait for them before its
+     * tests compare against the baselines. Keyed by what's pending (a queued PR read, a queued merge, a running merge).
+     */
+    private static final Map<String, InFlight> IN_FLIGHT = new ConcurrentHashMap<>();
+
+    /**
+     * @param repoSlug the PR's repository
+     * @param target the Eyes branch merged into, or {@code null} while that's not known yet (the PR is still being read
+     *     from GitHub), which counts as any branch of the repository
+     */
+    private record InFlight(String repoSlug, @CheckForNull String target) {
+
+        boolean into(String eyesBranch) {
+            String branch = eyesBranch.toLowerCase(Locale.ROOT);
+            return target != null
+                    ? target.toLowerCase(Locale.ROOT).equals(branch)
+                    : branch.startsWith(repoSlug.toLowerCase(Locale.ROOT) + "/");
+        }
+    }
+
+    /**
+     * Whether a baseline merge into this Eyes branch ({@code owner/repo/branch}) is running, or may be about to: a PR
+     * event of that repository is still being read from GitHub, or a merge into it is queued.
+     */
+    public static boolean isMergingInto(@NonNull String eyesBranch) {
+        return IN_FLIGHT.values().stream().anyMatch(f -> f.into(eyesBranch));
+    }
+
+    /** For tests: pretend a merge into {@code target} is running until {@link #testMergeDone} is called. */
+    static void testMergeStarted(String repoSlug, String target) {
+        IN_FLIGHT.put("test:" + target, new InFlight(repoSlug, target));
+    }
+
+    static void testMergeDone(String target) {
+        IN_FLIGHT.remove("test:" + target);
+    }
+
+    /**
      * Handles a raw {@code pull_request} webhook payload. The payload is only a hint that a PR changed: what changed
      * (merged or not, its branches, its labels) is read back from GitHub with the job's own credentials before
      * anything happens. A forged or replayed webhook, for example on a Jenkins without a webhook secret, therefore
@@ -111,6 +152,8 @@ public final class ReviewEvents {
             if (!QUEUED.add(key)) {
                 continue; // a read is already queued; it will see this change too
             }
+            String reading = "read:" + key;
+            IN_FLIGHT.put(reading, new InFlight(repoSlug, null)); // it may turn out to be a merge
             work.add(EXECUTOR.submit(() -> {
                 QUEUED.remove(key);
                 try (ACLContext ignored = ACL.as2(ACL.SYSTEM2)) {
@@ -139,6 +182,8 @@ public final class ReviewEvents {
                     Thread.currentThread().interrupt();
                 } catch (Exception e) {
                     LOGGER.log(Level.WARNING, "Could not apply a webhook for " + repoSlug + "#" + number, e);
+                } finally {
+                    IN_FLIGHT.remove(reading);
                 }
             }));
         }
@@ -154,6 +199,10 @@ public final class ReviewEvents {
         List<Future<?>> work = new ArrayList<>();
         ReviewRegistry registry = ReviewRegistry.get();
         for (PendingReview review : registry.forPullRequest(repoSlug, number)) {
+            String queued = "queued:" + mergeKey(review);
+            if (merged && baseRef != null) {
+                IN_FLIGHT.put(queued, new InFlight(repoSlug, repoSlug + "/" + baseRef));
+            }
             work.add(EXECUTOR.submit(() -> {
                 try (ACLContext ignored = ACL.as2(ACL.SYSTEM2)) {
                     closedNow(review, registry, merged, headRef, baseRef, null);
@@ -161,6 +210,8 @@ public final class ReviewEvents {
                     Thread.currentThread().interrupt();
                 } catch (RuntimeException e) {
                     LOGGER.log(Level.WARNING, "Baseline merge failed for " + repoSlug + "#" + number, e);
+                } finally {
+                    IN_FLIGHT.remove(queued);
                 }
             }));
         }
@@ -199,6 +250,11 @@ public final class ReviewEvents {
                     LOGGER.log(Level.WARNING, "{0}#{1}: job {2} is being deleted and the PR couldn''t be read from"
                             + " GitHub, so its Eyes baselines may not be merged",
                             new Object[] {slug, number, job.getFullName()});
+                    MergeHistory.record(review, run, review.getEyesBranch(), null, MergeHistory.Outcome.SKIPPED,
+                            "Couldn't tell whether the PR merged",
+                            "Job " + job.getFullName() + " was deleted and the PR couldn't be read from GitHub, so"
+                                    + " its Eyes baselines may not be merged. If it merged, merge them in Eyes under"
+                                    + " Compare & merge branches.");
                 } else if (!pr.open()) {
                     LOGGER.log(Level.INFO, "{0}#{1} closed (merged: {2}) and job {3} is being deleted; handling it"
                             + " first", new Object[] {slug, number, pr.merged(), job.getFullName()});
@@ -211,6 +267,11 @@ public final class ReviewEvents {
             } catch (Exception e) {
                 LOGGER.log(Level.WARNING, "Could not check whether " + slug + "#" + number + " merged before its"
                         + " job was deleted; its Eyes baselines may not be merged", e);
+                MergeHistory.record(review, run, review.getEyesBranch(), null, MergeHistory.Outcome.SKIPPED,
+                        "Couldn't tell whether the PR merged",
+                        "Job " + job.getFullName() + " was deleted and checking the PR failed (" + e
+                                + "), so its Eyes baselines may not be merged. If it merged, merge them in Eyes"
+                                + " under Compare & merge branches.");
             } finally {
                 MERGING.remove(key);
             }
@@ -264,13 +325,25 @@ public final class ReviewEvents {
             registry.remove(review);
             return;
         }
+        String slug = review.getRepoSlug();
+        String target = slug != null && baseRef != null ? slug + "/" + baseRef : null;
+        String source = review.getEyesBranch() != null
+                ? review.getEyesBranch()
+                : slug != null && headRef != null ? slug + "/" + headRef : null;
         if (!review.isMergeBaselinesOnPrMerge()) {
             LOGGER.log(Level.INFO, "{0} merged; not merging its Eyes baselines (turned off)", pr);
+            MergeHistory.record(review, run, source, target, MergeHistory.Outcome.TURNED_OFF,
+                    "Baseline merge turned off",
+                    "mergeBaselines is off for this job or in Manage Jenkins → System → Applitools Eyes.");
             registry.remove(review);
             return;
         }
         if (headRef == null || baseRef == null) {
             LOGGER.log(Level.WARNING, "{0} merged, but GitHub didn''t say its branches; Eyes baselines not merged", pr);
+            MergeHistory.record(review, run, source, target, MergeHistory.Outcome.SKIPPED,
+                    "Baseline merge skipped: branches unknown",
+                    "GitHub didn't say the PR's source and target branches. Merge its baselines in Eyes under"
+                            + " Compare & merge branches.");
             registry.remove(review);
             return;
         }
@@ -286,9 +359,24 @@ public final class ReviewEvents {
             LOGGER.log(Level.WARNING, "{0} merged, but build {1} #{2} is gone, so its Eyes baselines weren''t merged"
                     + " into {3}. Merge them in Eyes (Compare & merge branches).",
                     new Object[] {pr, review.getJobFullName(), review.getBuildNumber(), baseRef});
+            MergeHistory.record(review, null, source, target, MergeHistory.Outcome.SKIPPED,
+                    "Baseline merge skipped: build gone",
+                    "Build " + review.getJobFullName() + " #" + review.getBuildNumber() + " was deleted before the"
+                            + " merge could run, so its credentials are gone. Merge the baselines in Eyes under"
+                            + " Compare & merge branches (" + source + " → " + target + ").");
             registry.remove(review);
-        } else if (BaselineMerge.merge(review, build, headRef, baseRef, TaskListener.NULL, timeoutMillis)) {
-            registry.remove(review);
+            return;
+        }
+        String running = mergeKey(review);
+        if (slug != null && target != null) {
+            IN_FLIGHT.put(running, new InFlight(slug, target));
+        }
+        try {
+            if (BaselineMerge.merge(review, build, headRef, baseRef, TaskListener.NULL, timeoutMillis)) {
+                registry.remove(review);
+            }
+        } finally {
+            IN_FLIGHT.remove(running);
         }
     }
 

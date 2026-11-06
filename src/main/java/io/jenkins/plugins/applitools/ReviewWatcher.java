@@ -7,6 +7,7 @@ import hudson.model.Run;
 import hudson.model.TaskListener;
 import hudson.security.ACL;
 import hudson.security.ACLContext;
+import io.jenkins.plugins.applitools.review.MergeHistory;
 import io.jenkins.plugins.applitools.review.PendingReview;
 import io.jenkins.plugins.applitools.review.PollSchedule;
 import io.jenkins.plugins.applitools.review.ReviewEvents;
@@ -161,6 +162,16 @@ public class ReviewWatcher extends AsyncPeriodicWork {
                         + " gone. Merge its baselines in Eyes (Compare & merge branches).",
                         new Object[] {review.getRepoSlug(), review.getChangeId(), review.getJobFullName(),
                             review.getBuildNumber()});
+                // The earlier failed attempt recorded which branches it was about.
+                MergeHistory.Entry last = MergeHistory.get().latestFor(review.getRepoSlug(), review.getChangeId());
+                MergeHistory.record(review, null,
+                        last != null ? last.getSource() : review.getEyesBranch(),
+                        last != null ? last.getTarget() : null,
+                        MergeHistory.Outcome.SKIPPED,
+                        "Stopped retrying the baseline merge",
+                        "Build " + review.getJobFullName() + " #" + review.getBuildNumber() + " is gone, so the"
+                                + " failed merge can't be retried. Merge the baselines in Eyes under Compare & merge"
+                                + " branches.");
             }
             registry.remove(review);
             return true;
