@@ -17,6 +17,7 @@ import io.jenkins.plugins.applitools.review.LabelEventSubscriberTestAccess;
 import io.jenkins.plugins.applitools.review.MergeHistory;
 import io.jenkins.plugins.applitools.review.PendingReview;
 import io.jenkins.plugins.applitools.review.ReviewRegistry;
+import io.jenkins.plugins.applitools.review.UnmergedBaselines;
 import io.jenkins.plugins.checks.api.ChecksConclusion;
 import io.jenkins.plugins.checks.api.ChecksDetails;
 import io.jenkins.plugins.checks.util.CapturingChecksPublisher;
@@ -291,16 +292,92 @@ public class BaselineMergeTest {
     }
 
     @Test
-    void failedMergeWarnsTheTargetBranchBuild() throws Exception {
+    void failedMergeIsRetriedByTheTargetBranchBuild() throws Exception {
         WorkflowJob main = mainJob();
         mainBuild(main);
         eyes.mergeResult = "{\"merged\":false,\"conflicts\":2,\"changes\":[]}";
         LabelEventSubscriberTestAccess.mergedAndWait("acme/web", "7", true, "feature", "main");
+        assertThat(UnmergedBaselines.get().find("acme/web", "7").getTitle(), is("2 baseline conflicts"));
 
-        WorkflowRun next = mainBuild(main);
-        j.assertLogContains("[Applitools] WARNING: Baseline merge from PR #7: 2 baseline conflicts. The same"
-                + " checkpoints changed on main too. Resolve them in Eyes under Compare & merge branches", next);
-        j.assertLogContains("PR build: test0 #1", next);
+        WorkflowRun next = j.assertBuildStatus(Result.UNSTABLE, main.scheduleBuild2(0));
+        j.assertLogContains("[Applitools] Retrying the baseline merge of PR #7 (acme/web/feature → acme/web/main):"
+                + " 2 baseline conflicts since ", next);
+        j.assertLogContains("[Applitools] WARNING: The baselines of PR #7 still aren't merged into main: 2 baseline"
+                + " conflicts. The same checkpoints changed on main too. Resolve them in Eyes under Compare & merge"
+                + " branches", next);
+        j.assertLogNotContains("Baseline merge from PR #7", next); // the retry's line replaces the history's
+        assertThat(eyes.merges, contains("acme/web/feature -> acme/web/main (false)",
+                "acme/web/feature -> acme/web/main (false)"));
+        assertThat(mergeCheck().getConclusion(), is(ChecksConclusion.FAILURE));
+        assertThat(title(mergeCheck()), is("Baselines of a merged PR aren't merged"));
+        assertThat(mergeCheck().getOutput().orElseThrow().getSummary().orElseThrow(),
+                containsString("- **acme/web#7**: **2 baseline conflicts.** The same checkpoints changed"));
+    }
+
+    @Test
+    void targetBranchBuildMergesOnceResolved() throws Exception {
+        WorkflowJob main = mainJob();
+        eyes.mergeResult = "{\"merged\":false,\"conflicts\":1,\"changes\":[]}";
+        LabelEventSubscriberTestAccess.mergedAndWait("acme/web", "7", true, "feature", "main");
+        assertThat(ReviewRegistry.get().all().size(), is(1)); // still followed for a redelivered webhook
+
+        eyes.mergeResult = "{\"merged\":true,\"conflicts\":0,\"changes\":[{}]}";
+        WorkflowRun fixed = mainBuild(main);
+
+        j.assertLogContains("Baseline merge of PR #7 retried: Baselines merged into main.", fixed);
+        assertThat(mergeCheck().getConclusion(), is(ChecksConclusion.SUCCESS));
+        assertThat(title(mergeCheck()), is("Retried baseline merge succeeded"));
+        assertThat(UnmergedBaselines.get().all(), empty());
+        assertThat(ReviewRegistry.get().all(), empty());
+        assertThat(lastMerge().getOutcome(), is(MergeHistory.Outcome.MERGED));
+        assertThat(lastMerge().getPlainSummary(), containsString("Retried by web-main #1."));
+
+        int checks = PUBLISHER.getPublishedChecks().size();
+        j.assertLogNotContains("Baseline merge", mainBuild(main)); // printed once, nothing left to retry
+        assertThat(PUBLISHER.getPublishedChecks().stream().skip(checks)
+                .filter(c -> c.getName().orElse("").equals(BaselineMerge.CHECK_NAME)).toList(), empty());
+    }
+
+    @Test
+    void goneBuildIsMergedByTheTargetBranchBuild() throws Exception {
+        j.jenkins.getItemByFullName("test0", WorkflowJob.class).getBuildByNumber(1).delete();
+        LabelEventSubscriberTestAccess.mergedAndWait("acme/web", "7", true, "feature", "main");
+        assertThat(UnmergedBaselines.get().find("acme/web", "7").getOutcome(), is(MergeHistory.Outcome.SKIPPED));
+
+        WorkflowRun main = mainBuild(mainJob());
+
+        j.assertLogContains("Baseline merge of PR #7 retried: Baselines merged into main.", main);
+        assertThat(eyes.merges, contains("acme/web/feature -> acme/web/main (false)"));
+        assertThat(UnmergedBaselines.get().all(), empty());
+    }
+
+    @Test
+    void unstableCanBeTurnedOff() throws Exception {
+        ApplitoolsGlobalConfiguration.get().setUnstableWhileUnmerged(false);
+        eyes.mergeResult = "{\"merged\":false,\"conflicts\":2,\"changes\":[]}";
+        LabelEventSubscriberTestAccess.mergedAndWait("acme/web", "7", true, "feature", "main");
+
+        mainBuild(mainJob());
+
+        assertThat(mergeCheck().getConclusion(), is(ChecksConclusion.FAILURE));
+    }
+
+    @Test
+    void mergesIntoOtherBranchesArentRetried() throws Exception {
+        eyes.mergeResult = "{\"merged\":false,\"conflicts\":2,\"changes\":[]}";
+        LabelEventSubscriberTestAccess.mergedAndWait("acme/web", "7", true, "feature", "release");
+
+        j.assertLogNotContains("Retrying", mainBuild(mainJob()));
+        assertThat(eyes.merges.size(), is(1));
+    }
+
+    @Test
+    void conflictWithoutAGitHubConnectionIsShownAsNotPosted() throws Exception {
+        eyes.mergeResult = "{\"merged\":false,\"conflicts\":2,\"changes\":[]}";
+        LabelEventSubscriberTestAccess.mergedAndWait("acme/web", "7", true, "feature", "main");
+
+        assertThat(UnmergedBaselines.get().find("acme/web", "7").getCommentError(),
+                containsString("has no GitHub connection"));
     }
 
     @Test

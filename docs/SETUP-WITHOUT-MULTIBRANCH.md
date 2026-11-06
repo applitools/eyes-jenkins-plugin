@@ -36,7 +36,7 @@ One token does everything: Jenkins checks out the repository with it, and the pl
   | --- | --- | --- |
   | **Contents** | Read-only | Checking out the code (private repositories) |
   | **Commit statuses** | Read and write | Posting Visual tests, Design review and Baseline merge |
-  | **Pull requests** | Read-only | Reading labels, and whether the PR merged |
+  | **Pull requests** | Read and write | Reading labels and whether the PR merged; commenting on and labeling a merged PR whose baselines couldn't be merged ([details](BASELINE-MERGES.md)). Read-only works without that comment. |
   | Metadata | Read-only | Required by GitHub; added automatically |
 
   **Public repository?** You can drop Contents: Jenkins can check out without credentials.

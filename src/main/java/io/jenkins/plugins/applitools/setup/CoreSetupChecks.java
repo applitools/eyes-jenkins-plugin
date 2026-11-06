@@ -145,7 +145,7 @@ public class CoreSetupChecks extends SetupCheck {
         String when = minutes == 0 ? "less than a minute ago" : minutes + " min ago";
         if (lastError != null) {
             return SetupItem.problem("GitHub with a token", "Last call (" + when + ") failed: " + lastError + ".",
-                    "Check the token credential: it needs Commit statuses (read and write) and Pull requests (read-only)"
+                    "Check the token credential: it needs Commit statuses (read and write) and Pull requests (read and write)"
                             + " on the repository.");
         }
         return SetupItem.ok("GitHub with a token", "Last call " + when + " succeeded; following " + tokenReviews

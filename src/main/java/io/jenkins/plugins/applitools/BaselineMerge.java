@@ -18,7 +18,8 @@ import java.util.logging.Logger;
 /**
  * When a PR merges, merges its Eyes baseline branch into the target branch's, so the changes reviewers accepted on the
  * PR don't show up as new diffs on the target branch. Reports the outcome as an "Applitools / Baseline merge" check on
- * the PR's last tested commit.
+ * the PR's last tested commit. A merge that fails is retried by each build of the target branch until it succeeds; see
+ * {@link BaselineMergeAlerts}.
  */
 public final class BaselineMerge {
 
@@ -62,62 +63,68 @@ public final class BaselineMerge {
         // The branch recorded at build time: right for forks (owner/repo/pr-N) and for a step's own branchName.
         String source = review.getEyesBranch() != null ? review.getEyesBranch() : slug + "/" + headRef;
         String target = slug + "/" + baseRef;
-        String key = mergeKey(run, review);
-        if (key == null) {
-            report(review, run, listener, source, target, Outcome.NO_KEY, "Baseline merge skipped",
-                    "No Eyes API key credential was available to merge `" + source + "` into `" + target + "`. Add an"
-                            + " Eyes merge key as a Secret text credential `"
-                            + ApplitoolsGlobalConfiguration.DEFAULT_MERGE_CREDENTIALS_ID + "`.");
-            return false;
-        }
-        EyesClient eyes = new EyesClient(review.getServerUrl(), key);
+        String key = mergeKey(run, review.getRunCredentialsId());
+        Attempt attempt = key == null
+                ? noKey(source, target)
+                : attempt(new EyesClient(review.getServerUrl(), key), source, target, baseRef, timeoutMillis);
+        report(review, run, listener, source, target, attempt.outcome(), attempt.title(), attempt.summary());
+        return attempt.outcome().isOk();
+    }
+
+    /** What one merge attempt came to. {@code summary} is Markdown. */
+    record Attempt(Outcome outcome, String title, String summary) {}
+
+    static Attempt noKey(String source, String target) {
+        return new Attempt(Outcome.NO_KEY, "Baseline merge skipped",
+                "No Eyes API key credential was available to merge `" + source + "` into `" + target + "`. Add an"
+                        + " Eyes merge key as a Secret text credential `"
+                        + ApplitoolsGlobalConfiguration.DEFAULT_MERGE_CREDENTIALS_ID + "`.");
+    }
+
+    /** Asks Eyes to merge {@code source} into {@code target} and waits at most {@code timeoutMillis} for it. */
+    static Attempt attempt(EyesClient eyes, String source, String target, String baseRef, long timeoutMillis)
+            throws InterruptedException {
         try {
             String jobId = eyes.startBranchMerge(source, target, false);
             long deadline = System.currentTimeMillis() + timeoutMillis;
             while (!eyes.isTaskDone(jobId)) {
                 if (System.currentTimeMillis() > deadline) {
-                    report(review, run, listener, source, target, Outcome.TIMED_OUT, "Baseline merge timed out",
+                    return new Attempt(Outcome.TIMED_OUT, "Baseline merge timed out",
                             "Eyes was still merging `" + source + "` into `" + target + "` after "
                                     + TimeUnit.MILLISECONDS.toSeconds(timeoutMillis) + "s. Check the branch in Eyes.");
-                    return false;
                 }
                 Thread.sleep(POLL_MILLIS);
             }
             EyesClient.MergeResult result = eyes.taskResult(jobId);
             if (result.conflicts() > 0) {
-                report(review, run, listener, source, target, Outcome.CONFLICTS,
+                return new Attempt(Outcome.CONFLICTS,
                         result.conflicts() + " baseline conflict" + (result.conflicts() == 1 ? "" : "s"),
                         "The same checkpoints changed on `" + baseRef + "` too. Resolve them in Eyes under **Compare &"
                                 + " merge branches** (`" + source + "` → `" + target + "`).");
-                return false;
             } else if (result.merged()) {
-                report(review, run, listener, source, target, Outcome.MERGED, "Baselines merged into " + baseRef,
+                return new Attempt(Outcome.MERGED, "Baselines merged into " + baseRef,
                         result.changes() + " baseline change" + (result.changes() == 1 ? "" : "s")
                                 + " from `" + source + "` now apply to `" + target + "`.");
-            } else {
-                report(review, run, listener, source, target, Outcome.NOTHING_TO_MERGE, "Nothing to merge",
-                        "`" + source + "` had no baseline changes for `" + target + "`.");
             }
-            return true;
+            return new Attempt(Outcome.NOTHING_TO_MERGE, "Nothing to merge",
+                    "`" + source + "` had no baseline changes for `" + target + "`.");
         } catch (EyesClient.UnauthorizedException e) {
-            report(review, run, listener, source, target, Outcome.REFUSED, "Eyes refused the baseline merge",
+            return new Attempt(Outcome.REFUSED, "Eyes refused the baseline merge",
                     "HTTP " + e.getStatus() + ": only Eyes **merge** keys (created for a team and a user) can merge"
-                            + " baselines. Add one as a Secret text credential `" + ApplitoolsGlobalConfiguration.DEFAULT_MERGE_CREDENTIALS_ID
-                            + "`, or set one in Manage Jenkins → System → Applitools Eyes. Then redeliver the PR's"
-                            + " `closed` webhook (GitHub App → Advanced → Recent Deliveries) to retry.");
-            return false;
+                            + " baselines. Add one as a Secret text credential `"
+                            + ApplitoolsGlobalConfiguration.DEFAULT_MERGE_CREDENTIALS_ID + "`, or set one in Manage"
+                            + " Jenkins → System → Applitools Eyes. The next build of `" + baseRef + "` retries the"
+                            + " merge.");
         } catch (IOException e) {
-            report(review, run, listener, source, target, Outcome.FAILED, "Baseline merge failed",
-                    String.valueOf(e.getMessage()));
-            return false;
+            return new Attempt(Outcome.FAILED, "Baseline merge failed", String.valueOf(e.getMessage()));
         }
     }
 
     /** Merge key: the configured merge credential, then the conventional ID, then the run key. */
-    private static String mergeKey(Run<?, ?> run, PendingReview review) {
+    static String mergeKey(Run<?, ?> run, String runCredentialsId) {
         String configured = ApplitoolsGlobalConfiguration.get().getMergeCredentialsId();
         for (String id : new String[] {
-            configured, ApplitoolsGlobalConfiguration.DEFAULT_MERGE_CREDENTIALS_ID, review.getRunCredentialsId()
+            configured, ApplitoolsGlobalConfiguration.DEFAULT_MERGE_CREDENTIALS_ID, runCredentialsId
         }) {
             if (id != null) {
                 String key = ApplitoolsBuildWrapper.lookupApiKey(run, id);
@@ -153,5 +160,6 @@ public final class BaselineMerge {
                         .withSummary(summary)
                         .build())
                 .build());
+        BaselineMergeAlerts.outcome(review, run, source, target, outcome, title, summary);
     }
 }

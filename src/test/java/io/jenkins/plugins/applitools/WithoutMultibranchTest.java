@@ -2,6 +2,7 @@ package io.jenkins.plugins.applitools;
 
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.contains;
+import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.empty;
 import static org.hamcrest.Matchers.hasItem;
 import static org.hamcrest.Matchers.is;
@@ -17,6 +18,7 @@ import hudson.util.Secret;
 import io.jenkins.plugins.applitools.FakeEyesServer.FakeTest;
 import io.jenkins.plugins.applitools.review.PendingReview;
 import io.jenkins.plugins.applitools.review.ReviewRegistry;
+import io.jenkins.plugins.applitools.review.UnmergedBaselines;
 import io.jenkins.plugins.applitools.setup.SetupCheck;
 import io.jenkins.plugins.applitools.setup.SetupItem;
 import io.jenkins.plugins.checks.util.CapturingChecksPublisher;
@@ -168,6 +170,105 @@ public class WithoutMultibranchTest {
         assertThat(eyes.merges, contains("acme/web/feature -> acme/web/main (false)"));
         assertThat(github.posted(), hasItem("Applitools / Baseline merge = success | Baselines merged into main"));
         assertThat(ReviewRegistry.get().all(), empty());
+    }
+
+    private static final String CONFLICTS = "{\"merged\":false,\"conflicts\":2,\"changes\":[]}";
+
+    /** PR #7 builds, then merges with baseline conflicts. */
+    private void mergedWithConflicts() throws Exception {
+        eyes.results(SHA, List.of(new FakeTest("s1", "unresolved")));
+        run(step("", "echo 'tests'"), Result.SUCCESS);
+        eyes.mergeResult = CONFLICTS;
+        github.state = "closed";
+        github.merged = true;
+        watcherTick();
+    }
+
+    /** A build of main, as the push of a merge starts it. */
+    private WorkflowRun mainBuild(WorkflowJob job, String sha, Result expected) throws Exception {
+        eyes.results(sha, List.of(new FakeTest("s1", "passed")));
+        job.setDefinition(new CpsFlowDefinition("applitools(repo: 'acme/web', commit: '" + sha + "', branch: 'main',"
+                + " githubCredentialsId: 'gh-token', githubApiUrl: '" + github.apiUrl() + "') { echo 'tests' }", true));
+        return j.assertBuildStatus(expected, job.scheduleBuild2(0));
+    }
+
+    private List<FakeGitHubServer.Status> mergeStatuses(String sha) {
+        return github.statuses.stream()
+                .filter(st -> st.sha().equals(sha) && st.context().equals(BaselineMerge.CHECK_NAME))
+                .toList();
+    }
+
+    @Test
+    void conflictsAreCommentedAndLabeledOnTheMergedPullRequest() throws Exception {
+        mergedWithConflicts();
+
+        assertThat(github.posted(), hasItem("Applitools / Baseline merge = failure | 2 baseline conflicts"));
+        assertThat(github.labels, hasItem(BaselineMergeAlerts.LABEL));
+        assertThat(github.comments.size(), is(1));
+        String comment = github.comments.get(0).body();
+        assertThat(comment, startsWith(BaselineMergeAlerts.MARKER));
+        assertThat(comment, containsString("### ⚠️ Eyes baselines from this PR weren't merged into `main`"));
+        assertThat(comment, containsString("**2 baseline conflicts.** The same checkpoints changed on `main` too."
+                + " Resolve them in Eyes under **Compare & merge branches** (`acme/web/feature` → `acme/web/main`)."));
+        assertThat(comment, containsString("builds of `main` show a failing **Applitools / Baseline merge** check"
+                + " and are marked unstable"));
+        UnmergedBaselines.Item item = UnmergedBaselines.get().find("acme/web", "7");
+        assertThat(item.getCommented(), is("2 baseline conflicts"));
+    }
+
+    @Test
+    void targetBranchBuildsStayRedUntilTheConflictIsResolved() throws Exception {
+        mergedWithConflicts();
+        WorkflowJob main = j.createProject(WorkflowJob.class, "web-main");
+
+        WorkflowRun first = mainBuild(main, "main0001", Result.UNSTABLE);
+        j.assertLogContains("[Applitools] WARNING: The baselines of PR #7 still aren't merged into main: 2 baseline"
+                + " conflicts.", first);
+        j.assertLogContains("Marked unstable", first);
+        assertThat(mergeStatuses("main0001").get(0).state(), is("failure"));
+        assertThat(mergeStatuses("main0001").get(0).description(), is("Baselines of a merged PR aren't merged"));
+        assertThat(github.comments.size(), is(1)); // same reason: not posted again
+
+        mainBuild(main, "main0002", Result.UNSTABLE); // still unresolved: still red
+
+        eyes.mergeResult = "{\"merged\":true,\"conflicts\":0,\"changes\":[{}]}"; // resolved in Eyes
+        WorkflowRun fixed = mainBuild(main, "main0003", Result.SUCCESS);
+        j.assertLogContains("Baseline merge of PR #7 retried: Baselines merged into main.", fixed);
+        assertThat(mergeStatuses("main0003").get(0).state(), is("success"));
+        assertThat(mergeStatuses("main0003").get(0).description(), is("Retried baseline merge succeeded"));
+        assertThat(github.labels, not(hasItem(BaselineMergeAlerts.LABEL)));
+        assertThat(github.comments.size(), is(1));
+        assertThat(github.comments.get(0).body(),
+                containsString("### ✅ Eyes baselines from this PR are merged into `main`"));
+        assertThat(UnmergedBaselines.get().all(), empty());
+        assertThat(ReviewRegistry.get().all(), empty());
+
+        mainBuild(main, "main0004", Result.SUCCESS);
+        assertThat(mergeStatuses("main0004"), empty()); // nothing left to report
+    }
+
+    @Test
+    void withoutWritePermissionTheBuildIsStillRed() throws Exception {
+        github.readOnly = true;
+        mergedWithConflicts();
+
+        UnmergedBaselines.Item item = UnmergedBaselines.get().find("acme/web", "7");
+        assertThat(item.getCommented(), is((String) null));
+        assertThat(item.getCommentError(), containsString("Pull requests: Read and write"));
+        mainBuild(j.createProject(WorkflowJob.class), "main0001", Result.UNSTABLE);
+        assertThat(mergeStatuses("main0001").get(0).state(), is("failure"));
+    }
+
+    @Test
+    void commentAndUnstableCanBeTurnedOff() throws Exception {
+        ApplitoolsGlobalConfiguration.get().setCommentOnUnmergedBaselines(false);
+        ApplitoolsGlobalConfiguration.get().setUnstableWhileUnmerged(false);
+        mergedWithConflicts();
+
+        assertThat(github.comments, empty());
+        assertThat(github.labels, not(hasItem(BaselineMergeAlerts.LABEL)));
+        mainBuild(j.createProject(WorkflowJob.class), "main0001", Result.SUCCESS);
+        assertThat(mergeStatuses("main0001").get(0).state(), is("failure")); // the check still says so
     }
 
     @Test

@@ -322,6 +322,9 @@ Results: merged → "Baselines merged into base"; nothing to merge → success; 
 - Use the merge key (configured → `applitools-merge-api-key` → run key); poll the task every 5 s, for at most 10 min.
 - Post **Applitools / Baseline merge** on the PR's last tested commit.
 - Keep the review until success, so a redelivered `closed` event (or the next poll) retries after the key or conflicts are fixed.
+- **Unmerged baselines** (any failure or skip with known source and target): list the PR as unmerged until its baselines merge. Comment on the PR (one comment, found by the marker `<!-- applitools-baseline-merge -->`, re-posted only when the reason changes) and add the label `eyes-baselines-not-merged`; needs **Pull requests: write**.
+- Every build of a branch retries the unmerged merges into its Eyes branch before its tests, with its own server and merge key. Still failing: a failing **Applitools / Baseline merge** check on its commit and an UNSTABLE result (both configurable). Succeeds: a passing check, the comment edited to say so, the label removed.
+- Details for users: [Baseline merges and conflicts](BASELINE-MERGES.md).
 - Verified live: after merging, the next `main` build passed the accepted Storybook changes instead of flagging them again.
 
 ---

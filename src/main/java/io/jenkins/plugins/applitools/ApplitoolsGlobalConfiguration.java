@@ -42,6 +42,8 @@ public class ApplitoolsGlobalConfiguration extends GlobalConfiguration {
 
     private CommitStatusPublisher.Mode githubReporting;
     private Boolean mergeBaselines;
+    private Boolean commentOnUnmergedBaselines;
+    private Boolean unstableWhileUnmerged;
     private boolean followBranchBuilds;
     private String mergeCredentialsId;
     private boolean allowForkPullRequests;
@@ -177,6 +179,32 @@ public class ApplitoolsGlobalConfiguration extends GlobalConfiguration {
     @DataBoundSetter
     public void setMergeBaselines(boolean mergeBaselines) {
         this.mergeBaselines = mergeBaselines;
+        save();
+    }
+
+    /**
+     * When a merged PR's baselines couldn't be merged (conflicts, a refused key…), comment on the PR and label it
+     * {@code eyes-baselines-not-merged} until a build of the target branch merges them. Needs GitHub "Pull requests:
+     * read and write".
+     */
+    public boolean isCommentOnUnmergedBaselines() {
+        return commentOnUnmergedBaselines == null || commentOnUnmergedBaselines;
+    }
+
+    @DataBoundSetter
+    public void setCommentOnUnmergedBaselines(boolean commentOnUnmergedBaselines) {
+        this.commentOnUnmergedBaselines = commentOnUnmergedBaselines;
+        save();
+    }
+
+    /** Mark builds of a target branch unstable while a merged PR's baselines aren't merged into it. */
+    public boolean isUnstableWhileUnmerged() {
+        return unstableWhileUnmerged == null || unstableWhileUnmerged;
+    }
+
+    @DataBoundSetter
+    public void setUnstableWhileUnmerged(boolean unstableWhileUnmerged) {
+        this.unstableWhileUnmerged = unstableWhileUnmerged;
         save();
     }
 

@@ -37,6 +37,8 @@ class GlobalSettingsFormTest {
         config.setDesignReviewLabel("needs-design");
         config.setDesignReviewByDefault(true);
         config.setMergeBaselines(false);
+        config.setCommentOnUnmergedBaselines(false);
+        config.setUnstableWhileUnmerged(false);
         config.setFollowBranchBuilds(true);
         config.setReviewPollSeconds(20);
         config.setReviewSlowAfterMinutes(45);
@@ -59,6 +61,8 @@ class GlobalSettingsFormTest {
         assertThat(config.getDesignReviewLabel(), is("needs-design"));
         assertThat(config.isDesignReviewByDefault(), is(true));
         assertThat(config.isMergeBaselines(), is(false));
+        assertThat(config.isCommentOnUnmergedBaselines(), is(false));
+        assertThat(config.isUnstableWhileUnmerged(), is(false));
         assertThat(config.isFollowBranchBuilds(), is(true));
         assertThat(config.getReviewPollSeconds(), is(20));
         assertThat(config.getReviewSlowAfterMinutes(), is(45));
