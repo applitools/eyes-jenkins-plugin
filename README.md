@@ -65,7 +65,7 @@ mvn hpi:run            # Jenkins with the plugin loaded at http://localhost:8080
 mvn verify             # build target/applitools-jenkins.hpi and run tests
 ```
 
-**Release:** push a version tag (`git tag v0.2.0 && git push origin v0.2.0`). The [release workflow](.github/workflows/release.yml) runs the full build and tests with that version and publishes `applitools-jenkins.hpi` and its checksum on the Releases page.
+**Release:** push a version tag (`git tag v0.2.0 && git push origin v0.2.0`). The [release workflow](.github/workflows/release.yml) runs the full build and tests with that version and publishes `applitools-jenkins.hpi` and its checksum on the Releases page. Creating the release on GitHub (**Releases → Draft a new release**, with a new `v…` tag) works too: the files are attached to it and its title is kept.
 
 | Path | Role |
 | --- | --- |
