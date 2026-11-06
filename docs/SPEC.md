@@ -326,7 +326,7 @@ Results: merged with changes → "Baselines merged into base"; not merged, or **
 
 ### 11.1 Unmerged baselines: make them impossible to miss
 
-A merge that fails (conflicts, refused or missing key, timeout, failure, or skipped with known branches) MUST stay visible until the baselines are merged. User-facing explanation: [Baseline merges and conflicts](BASELINE-MERGES.md).
+A merge that fails (conflicts, refused or missing key, timeout, failure, or skipped with known branches) MUST stay visible until the baselines are merged. User-facing explanation: the plugin's `docs/BASELINE-MERGES.md`; the Action's README, "When a merge fails".
 
 **On the merged PR:**
 - **One comment**, found again by the hidden marker `<!-- applitools-baseline-merge -->` and edited in place, never duplicated. Re-posted only when the reason changes, so retries don't spam the PR.
