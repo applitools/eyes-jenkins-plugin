@@ -24,7 +24,7 @@ public final class BaselineMerge {
     private static final Logger LOGGER = Logger.getLogger(BaselineMerge.class.getName());
 
     static final long POLL_MILLIS = Long.getLong(BaselineMerge.class.getName() + ".pollMillis", 5000);
-    static final long TIMEOUT_MILLIS =
+    public static final long TIMEOUT_MILLIS =
             TimeUnit.SECONDS.toMillis(Long.getLong(BaselineMerge.class.getName() + ".timeoutSeconds", 600));
 
     private BaselineMerge() {}
@@ -40,6 +40,18 @@ public final class BaselineMerge {
             @NonNull String headRef,
             @NonNull String baseRef,
             @NonNull TaskListener listener)
+            throws InterruptedException {
+        return merge(review, run, headRef, baseRef, listener, TIMEOUT_MILLIS);
+    }
+
+    /** {@link #merge} waiting at most {@code timeoutMillis} for Eyes. */
+    public static boolean merge(
+            @NonNull PendingReview review,
+            @NonNull Run<?, ?> run,
+            @NonNull String headRef,
+            @NonNull String baseRef,
+            @NonNull TaskListener listener,
+            long timeoutMillis)
             throws InterruptedException {
         String slug = review.getRepoSlug();
         if (slug == null) {
@@ -57,12 +69,12 @@ public final class BaselineMerge {
         EyesClient eyes = new EyesClient(review.getServerUrl(), key);
         try {
             String jobId = eyes.startBranchMerge(source, target, false);
-            long deadline = System.currentTimeMillis() + TIMEOUT_MILLIS;
+            long deadline = System.currentTimeMillis() + timeoutMillis;
             while (!eyes.isTaskDone(jobId)) {
                 if (System.currentTimeMillis() > deadline) {
                     report(run, listener, ChecksConclusion.FAILURE, "Baseline merge timed out",
                             "Eyes was still merging `" + source + "` into `" + target + "` after "
-                                    + TimeUnit.MILLISECONDS.toSeconds(TIMEOUT_MILLIS) + "s. Check the branch in Eyes.");
+                                    + TimeUnit.MILLISECONDS.toSeconds(timeoutMillis) + "s. Check the branch in Eyes.");
                     return false;
                 }
                 Thread.sleep(POLL_MILLIS);

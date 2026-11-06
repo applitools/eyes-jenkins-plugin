@@ -195,10 +195,7 @@ public class WithoutMultibranchTest {
         github.state = "closed";
         github.merged = true;
 
-        build.getParent().delete();
-        for (int i = 0; i < 100 && ReviewRegistry.get().all().size() > 0; i++) {
-            Thread.sleep(50);
-        }
+        build.getParent().delete(); // merges before the job is gone
 
         assertThat(eyes.merges, contains("acme/web/feature -> acme/web/main (false)"));
         assertThat(github.posted(), hasItem("Applitools / Baseline merge = success | Baselines merged into main"));

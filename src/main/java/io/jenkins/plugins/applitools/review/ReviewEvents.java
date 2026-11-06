@@ -168,13 +168,19 @@ public final class ReviewEvents {
     }
 
     /**
+     * Longest a job deletion waits for an Eyes baseline merge. The merge runs while the job still exists (see {@link
+     * #jobDeleting}), which holds up the deletion, so this is shorter than a normal merge's wait.
+     */
+    static final long DELETION_MERGE_TIMEOUT_MILLIS = java.util.concurrent.TimeUnit.SECONDS.toMillis(
+            Long.getLong(ReviewEvents.class.getName() + ".deletionMergeTimeoutSeconds", 120));
+
+    /**
      * Called before Jenkins deletes a job. Multibranch deletes a closed PR's job, sometimes before the plugin has
      * handled the PR's "closed" webhook, or when the webhook never arrived (found by a later scan). Once the job is
-     * gone, so is the build the merge needs (credentials, where to report), so check now, while it still exists:
-     * if a followed PR of this job merged, merge its baselines.
+     * gone, so is what the merge needs (the build's credentials, GitHub connection and where to report), so this
+     * runs before the deletion, on its thread: if a followed PR of this job merged, its baselines are merged now.
      */
-    public static List<Future<?>> jobDeleting(Job<?, ?> job) {
-        List<Future<?>> work = new ArrayList<>();
+    public static void jobDeleting(Job<?, ?> job) {
         ReviewRegistry registry = ReviewRegistry.get();
         for (PendingReview review : registry.all()) {
             if (!review.getJobFullName().equals(job.getFullName()) || !review.isPullRequest() || review.isClosed()) {
@@ -185,30 +191,30 @@ public final class ReviewEvents {
             String number = review.getChangeId();
             String key = mergeKey(review);
             if (run == null || slug == null || number == null || !MERGING.add(key)) {
-                continue; // a merge is already running (it holds the build), or there's nothing to merge with
+                continue; // a merge is already running, or there's nothing to merge with
             }
-            // Holding the key keeps the watcher from dropping the review while its job disappears.
-            work.add(EXECUTOR.submit(() -> {
-                try (ACLContext ignored = ACL.as2(ACL.SYSTEM2)) {
-                    GitHubRestClient.PullState pr = PullRequestStates.of(run, slug, number);
-                    if (pr == null) {
-                        LOGGER.log(Level.WARNING, "{0}#{1}: job {2} was deleted and the PR couldn''t be read from"
-                                + " GitHub, so its Eyes baselines may not be merged",
-                                new Object[] {slug, number, job.getFullName()});
-                    } else if (!pr.open()) {
-                        mergeNow(review, registry, pr.merged(), pr.headRef(), pr.baseRef(), run);
-                    }
-                } catch (InterruptedException e) {
-                    Thread.currentThread().interrupt();
-                } catch (Exception e) {
-                    LOGGER.log(Level.WARNING, "Could not check whether " + slug + "#" + number + " merged before its"
-                            + " job was deleted; its Eyes baselines may not be merged", e);
-                } finally {
-                    MERGING.remove(key);
+            try (ACLContext ignored = ACL.as2(ACL.SYSTEM2)) {
+                GitHubRestClient.PullState pr = PullRequestStates.of(run, slug, number);
+                if (pr == null) {
+                    LOGGER.log(Level.WARNING, "{0}#{1}: job {2} is being deleted and the PR couldn''t be read from"
+                            + " GitHub, so its Eyes baselines may not be merged",
+                            new Object[] {slug, number, job.getFullName()});
+                } else if (!pr.open()) {
+                    LOGGER.log(Level.INFO, "{0}#{1} closed (merged: {2}) and job {3} is being deleted; handling it"
+                            + " first", new Object[] {slug, number, pr.merged(), job.getFullName()});
+                    mergeNow(review, registry, pr.merged(), pr.headRef(), pr.baseRef(), run,
+                            DELETION_MERGE_TIMEOUT_MILLIS);
                 }
-            }));
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                return;
+            } catch (Exception e) {
+                LOGGER.log(Level.WARNING, "Could not check whether " + slug + "#" + number + " merged before its"
+                        + " job was deleted; its Eyes baselines may not be merged", e);
+            } finally {
+                MERGING.remove(key);
+            }
         }
-        return work;
     }
 
     /** True while a baseline merge for this review is running or about to. */
@@ -237,7 +243,7 @@ public final class ReviewEvents {
             return; // already merging
         }
         try {
-            mergeNow(review, registry, merged, headRef, baseRef, run);
+            mergeNow(review, registry, merged, headRef, baseRef, run, BaselineMerge.TIMEOUT_MILLIS);
         } finally {
             MERGING.remove(key);
         }
@@ -250,7 +256,8 @@ public final class ReviewEvents {
             boolean merged,
             @CheckForNull String headRef,
             @CheckForNull String baseRef,
-            @CheckForNull Run<?, ?> run)
+            @CheckForNull Run<?, ?> run,
+            long timeoutMillis)
             throws InterruptedException {
         String pr = review.getRepoSlug() + "#" + review.getChangeId();
         if (!merged) {
@@ -280,7 +287,7 @@ public final class ReviewEvents {
                     + " into {3}. Merge them in Eyes (Compare & merge branches).",
                     new Object[] {pr, review.getJobFullName(), review.getBuildNumber(), baseRef});
             registry.remove(review);
-        } else if (BaselineMerge.merge(review, build, headRef, baseRef, TaskListener.NULL)) {
+        } else if (BaselineMerge.merge(review, build, headRef, baseRef, TaskListener.NULL, timeoutMillis)) {
             registry.remove(review);
         }
     }
