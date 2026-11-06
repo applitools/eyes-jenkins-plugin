@@ -50,9 +50,14 @@ public record BatchSettings(
         String label = slug != null ? slug : jobFullName;
         String prefix = slug != null ? slug + "/" : "";
 
+        // A PR build is keyed on its head commit. A branch build adds the branch: the same commit is often built as a PR
+        // and as a branch at once, or on two branches, and builds sharing a batch close and read each other's results.
+        String commitBatchId = scm.commitSha() == null || scm.isPullRequest() || scm.branch() == null
+                ? scm.commitSha()
+                : scm.commitSha() + "-" + scm.branch();
         String batchId = firstNonNull(
                 overrides.batchId(),
-                scm.commitSha(),
+                commitBatchId,
                 // No commit to key on (e.g. a Freestyle job without Git): unique per block.
                 UUID.randomUUID().toString());
 
