@@ -173,7 +173,7 @@ class SetupPageTest {
 
         UnmergedBaselines.Item conflict = UnmergedBaselines.get().failed("acme/web", "13", "acme/web/feature",
                 "acme/web/main", MergeHistory.Outcome.CONFLICTS, "2 baseline conflicts",
-                "The same checkpoints changed on `main` too. Resolve them in Eyes under **Compare & merge branches**.");
+                "The same checkpoints changed on `main` too. In Eyes, open **Compare & merge branches**.");
         UnmergedBaselines.get().commented(conflict, null);
         UnmergedBaselines.Item refused = UnmergedBaselines.get().failed("acme/web", "14", "acme/web/fix",
                 "acme/web/main", MergeHistory.Outcome.REFUSED, "Eyes refused the baseline merge", "HTTP 403.");
@@ -185,7 +185,7 @@ class SetupPageTest {
         assertThat(rows.get(0).getAttribute("data-outcome"), is("CONFLICTS"));
         assertThat(rows.get(0).asNormalizedText(), containsString("acme/web#13"));
         assertThat(rows.get(0).asNormalizedText(), containsString("acme/web/feature → acme/web/main"));
-        assertThat(rows.get(0).asNormalizedText(), containsString("Resolve them in Eyes under Compare & merge"));
+        assertThat(rows.get(0).asNormalizedText(), containsString("In Eyes, open Compare & merge branches"));
         assertThat(rows.get(0).asNormalizedText(), containsString("Posted, labeled"));
         assertThat(rows.get(1).asNormalizedText(), containsString("Not posted: GitHub refused the comment"));
 

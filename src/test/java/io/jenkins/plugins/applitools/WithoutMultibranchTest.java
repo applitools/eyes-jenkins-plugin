@@ -209,7 +209,8 @@ public class WithoutMultibranchTest {
         assertThat(comment, startsWith(BaselineMergeAlerts.MARKER));
         assertThat(comment, containsString("### ⚠️ Eyes baselines from this PR weren't merged into `main`"));
         assertThat(comment, containsString("**2 baseline conflicts.** The same checkpoints changed on `main` too."
-                + " Resolve them in Eyes under **Compare & merge branches** (`acme/web/feature` → `acme/web/main`)."));
+                + " In Eyes, open **Compare & merge branches**, compare `acme/web/feature` → `acme/web/main`, resolve"
+                + " the conflicts, then merge."));
         assertThat(comment, containsString("builds of `main` show a failing **Applitools / Baseline merge** check"
                 + " and are marked unstable"));
         UnmergedBaselines.Item item = UnmergedBaselines.get().find("acme/web", "7");
@@ -240,6 +241,8 @@ public class WithoutMultibranchTest {
         assertThat(github.comments.size(), is(1));
         assertThat(github.comments.get(0).body(),
                 containsString("### ✅ Eyes baselines from this PR are merged into `main`"));
+        assertThat(github.comments.get(0).body(), containsString("1 baseline change from `acme/web/feature` now apply"
+                + " to `acme/web/main`. Confirmed by [web-main #3]("));
         assertThat(UnmergedBaselines.get().all(), empty());
         assertThat(ReviewRegistry.get().all(), empty());
 

@@ -99,15 +99,17 @@ public final class BaselineMerge {
             if (result.conflicts() > 0) {
                 return new Attempt(Outcome.CONFLICTS,
                         result.conflicts() + " baseline conflict" + (result.conflicts() == 1 ? "" : "s"),
-                        "The same checkpoints changed on `" + baseRef + "` too. Resolve them in Eyes under **Compare &"
-                                + " merge branches** (`" + source + "` → `" + target + "`).");
-            } else if (result.merged()) {
+                        "The same checkpoints changed on `" + baseRef + "` too. In Eyes, open **Compare & merge"
+                                + " branches**, compare `" + source + "` → `" + target + "`, resolve the conflicts,"
+                                + " then merge.");
+            } else if (result.merged() && result.changes() > 0) {
                 return new Attempt(Outcome.MERGED, "Baselines merged into " + baseRef,
                         result.changes() + " baseline change" + (result.changes() == 1 ? "" : "s")
                                 + " from `" + source + "` now apply to `" + target + "`.");
             }
+            // Eyes reports merged with no changes once conflicts were resolved and merged by hand in Eyes.
             return new Attempt(Outcome.NOTHING_TO_MERGE, "Nothing to merge",
-                    "`" + source + "` had no baseline changes for `" + target + "`.");
+                    "Nothing was left to merge from `" + source + "` into `" + target + "`.");
         } catch (EyesClient.UnauthorizedException e) {
             return new Attempt(Outcome.REFUSED, "Eyes refused the baseline merge",
                     "HTTP " + e.getStatus() + ": only Eyes **merge** keys (created for a team and a user) can merge"

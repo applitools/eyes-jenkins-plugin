@@ -303,8 +303,8 @@ public class BaselineMergeTest {
         j.assertLogContains("[Applitools] Retrying the baseline merge of PR #7 (acme/web/feature → acme/web/main):"
                 + " 2 baseline conflicts since ", next);
         j.assertLogContains("[Applitools] WARNING: The baselines of PR #7 still aren't merged into main: 2 baseline"
-                + " conflicts. The same checkpoints changed on main too. Resolve them in Eyes under Compare & merge"
-                + " branches", next);
+                + " conflicts. The same checkpoints changed on main too. In Eyes, open Compare & merge branches,"
+                + " compare acme/web/feature → acme/web/main, resolve the conflicts, then merge.", next);
         j.assertLogNotContains("Baseline merge from PR #7", next); // the retry's line replaces the history's
         assertThat(eyes.merges, contains("acme/web/feature -> acme/web/main (false)",
                 "acme/web/feature -> acme/web/main (false)"));
@@ -349,6 +349,36 @@ public class BaselineMergeTest {
         j.assertLogContains("Baseline merge of PR #7 retried: Baselines merged into main.", main);
         assertThat(eyes.merges, contains("acme/web/feature -> acme/web/main (false)"));
         assertThat(UnmergedBaselines.get().all(), empty());
+    }
+
+    @Test
+    void resolvedByHandInEyesIsNothingToMerge() throws Exception {
+        WorkflowJob main = mainJob();
+        eyes.mergeResult = "{\"merged\":false,\"conflicts\":1,\"changes\":[]}";
+        LabelEventSubscriberTestAccess.mergedAndWait("acme/web", "7", true, "feature", "main");
+
+        eyes.mergeResult = "{\"merged\":true,\"conflicts\":0,\"changes\":[]}"; // what Eyes says after a manual merge
+        WorkflowRun fixed = mainBuild(main);
+
+        j.assertLogContains("Baseline merge of PR #7 retried: Nothing to merge. Nothing was left to merge from"
+                + " acme/web/feature into acme/web/main.", fixed);
+        assertThat(UnmergedBaselines.get().all(), empty());
+    }
+
+    @Test
+    void retryWithoutAMergeKeyKeepsTheRealReason() throws Exception {
+        WorkflowJob main = mainJob();
+        eyes.mergeResult = "{\"merged\":false,\"conflicts\":2,\"changes\":[]}";
+        LabelEventSubscriberTestAccess.mergedAndWait("acme/web", "7", true, "feature", "main");
+
+        eyes.requiredMergeKey = "a-merge-key-this-build-lacks";
+        WorkflowRun next = j.assertBuildStatus(Result.UNSTABLE, main.scheduleBuild2(0));
+
+        j.assertLogContains("still aren't merged into main: 2 baseline conflicts.", next);
+        j.assertLogContains("This build couldn't retry the merge: Eyes refused the baseline merge.", next);
+        assertThat(UnmergedBaselines.get().find("acme/web", "7").getTitle(), is("2 baseline conflicts"));
+        assertThat(mergeCheck().getOutput().orElseThrow().getSummary().orElseThrow(),
+                containsString("**2 baseline conflicts.**"));
     }
 
     @Test

@@ -75,7 +75,7 @@ public final class BaselineMergeAlerts {
             if (outcome.isOk()) {
                 UnmergedBaselines.Item item = UnmergedBaselines.get().merged(slug, number);
                 if (item != null && run != null) {
-                    notifyMerged(run, item, title);
+                    notifyMerged(run, item, new BaselineMerge.Attempt(outcome, title, summary));
                 }
             } else if (outcome != Outcome.TURNED_OFF && source != null && target != null) {
                 UnmergedBaselines.Item item =
@@ -118,6 +118,16 @@ public final class BaselineMergeAlerts {
                     : BaselineMerge.attempt(new EyesClient(serverUrl, key), item.getSource(), item.getTarget(),
                             branch, retryTimeoutMillis());
             String pr = "**" + item.getPullRequestName() + "**";
+            if (!canRetry(attempt.outcome(), item.getOutcome())) {
+                // No usable merge key here: keep the PR's real reason (e.g. conflicts) rather than replace it.
+                log.println(PREFIX + "WARNING: The baselines of PR #" + item.getPullRequest() + " still aren't merged"
+                        + " into " + branch + ": " + item.getTitle() + ". " + item.getPlainSummary() + " This build"
+                        + " couldn't retry the merge: " + attempt.title() + ". " + plain(attempt.summary()));
+                failing.add("- " + pr + ": **" + item.getTitle() + ".** " + item.getSummary() + " Not retried: "
+                        + attempt.title() + ". " + attempt.summary());
+                notifyFailing(build, item); // in case it was never posted (e.g. the PR's build was gone)
+                continue;
+            }
             if (attempt.outcome().isOk()) {
                 UnmergedBaselines.get().merged(item.getRepoSlug(), item.getPullRequest());
                 MergeHistory.get().add(new MergeHistory.Entry(item.getRepoSlug(), item.getPullRequest(),
@@ -130,7 +140,7 @@ public final class BaselineMergeAlerts {
                         ReviewRegistry.get().remove(review); // nothing left for a redelivered webhook to retry
                     }
                 }
-                notifyMerged(build, item, attempt.title());
+                notifyMerged(build, item, attempt);
                 log.println(PREFIX + "Baseline merge of PR #" + item.getPullRequest() + " retried: "
                         + attempt.title() + ". " + plain(attempt.summary()));
                 merged.add("- " + pr + ": " + attempt.title() + ". " + attempt.summary());
@@ -152,6 +162,16 @@ public final class BaselineMergeAlerts {
                     + (failing.size() == 1 ? "'s" : "s'") + " baselines aren't merged into " + eyesBranch
                     + ". See Manage Jenkins → Applitools setup → Unmerged baselines.");
         }
+    }
+
+    /**
+     * Whether a retry's outcome replaces the PR's recorded reason. A build without a merge key gets "refused" or "no
+     * key" for any merge, which says nothing new about a PR that failed for another reason (e.g. conflicts).
+     */
+    static boolean canRetry(Outcome retried, Outcome recorded) {
+        boolean keyProblem = retried == Outcome.REFUSED || retried == Outcome.NO_KEY;
+        boolean wasKeyProblem = recorded == Outcome.REFUSED || recorded == Outcome.NO_KEY;
+        return !keyProblem || wasKeyProblem;
     }
 
     /** The "Applitools / Baseline merge" check on the branch build's commit. */
@@ -197,11 +217,11 @@ public final class BaselineMergeAlerts {
     }
 
     /** Updates the PR's comment to say its baselines are merged, and removes the label, if the plugin had added them. */
-    private static void notifyMerged(Run<?, ?> run, UnmergedBaselines.Item item, String title) {
+    private static void notifyMerged(Run<?, ?> run, UnmergedBaselines.Item item, BaselineMerge.Attempt attempt) {
         if (item.getCommented() == null) {
             return; // nothing was posted (the comment comes before the label, so no label either)
         }
-        update(run, item, mergedComment(item, run, title), false);
+        update(run, item, mergedComment(item, run, attempt), false);
     }
 
     private static void update(Run<?, ?> run, UnmergedBaselines.Item item, String body, boolean labeled) {
@@ -238,13 +258,13 @@ public final class BaselineMergeAlerts {
                 + " succeeds, this comment is updated and the `" + LABEL + "` label removed.";
     }
 
-    static String mergedComment(UnmergedBaselines.Item item, Run<?, ?> run, String title) {
+    static String mergedComment(UnmergedBaselines.Item item, Run<?, ?> run, BaselineMerge.Attempt attempt) {
         String root = Jenkins.get().getRootUrl();
         String by = root != null ? "[" + run.getFullDisplayName() + "](" + root + run.getUrl() + ")" : run.getFullDisplayName();
         return MARKER + "\n"
                 + "### ✅ Eyes baselines from this PR are merged into `" + item.getTargetBranch() + "`\n\n"
-                + title + ", by " + by + " on " + format(System.currentTimeMillis()) + ". Earlier: "
-                + item.getTitle() + " (since " + format(item.getSince()) + ").";
+                + attempt.summary() + " Confirmed by " + by + " on " + format(System.currentTimeMillis()) + ".\n\n"
+                + "Earlier: " + item.getTitle() + " (since " + format(item.getSince()) + ").";
     }
 
     private static String plain(String markdown) {

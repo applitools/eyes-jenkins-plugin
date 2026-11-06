@@ -41,13 +41,14 @@ These stay in place until the baselines are merged, however many builds and push
 Before its tests run, every build of a branch (for example `main`) retries the merges into that branch that haven't happened yet. It uses its own Eyes merge key, so the retry works even after the PR's build is gone.
 
 - **Still failing:** the build gets a failing **Applitools / Baseline merge** check and is marked unstable. Its visual tests still run, but they may flag the changes the PR accepted, because those aren't in `main`'s baselines yet.
+- **Can't retry** because this build has no usable Eyes merge key: the check still fails, says the merge wasn't retried and why, and keeps the PR's real reason (for example, the conflicts) rather than replacing it with "key refused".
 - **Succeeds:** the merge happens. The build's check turns ✅ *Retried baseline merge succeeded*, the PR's comment changes to ✅ *Eyes baselines from this PR are merged into `main`*, and the label comes off. Its tests then compare against the merged baselines.
 
 ### Fixing it
 
 | Reason | Fix |
 | --- | --- |
-| **N baseline conflicts** | In Eyes, open **Compare & merge branches**, compare `owner/repo/<PR branch>` → `owner/repo/<target branch>`, resolve each conflict and merge. |
+| **N baseline conflicts** | In Eyes, open **Compare & merge branches**, compare `owner/repo/<PR branch>` → `owner/repo/<target branch>`, resolve the conflicts, then merge. |
 | **Eyes refused the baseline merge** | Add an Eyes **merge** key as a Secret text credential `applitools-merge-api-key` (Eyes → Admin → API Keys, with the **merge** option). |
 | **Baseline merge skipped** (no key) | The same: add a merge key. |
 | **Baseline merge timed out** | Check the branches in Eyes. A later build retries the merge. |
@@ -55,7 +56,9 @@ Before its tests run, every build of a branch (for example `main`) retries the m
 
 Then run the target branch's build again, or wait for the next push. When its retry succeeds, everything clears on its own.
 
-If you merged the baselines in Eyes yourself, the next build's retry finds nothing left to merge and clears everything the same way.
+If you merged the baselines in Eyes yourself, the next build's retry finds nothing left to merge and clears everything the same way. The ✅ comment then reads *Nothing was left to merge from `src` into `tgt`*.
+
+The [GitHub Action](https://github.com/applitools/eyes-github-action) works the same way, with the same comment, label and check.
 
 ## Settings
 
