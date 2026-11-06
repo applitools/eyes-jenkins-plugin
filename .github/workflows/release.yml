@@ -4,6 +4,9 @@
 #
 # The tag sets the plugin's version (v0.2.0 → 0.2.0). The full test suite and SpotBugs run first; a failure
 # publishes nothing. The release gets applitools-jenkins.hpi and its SHA-256 checksum.
+#
+# Creating the release on GitHub (Releases → Draft a new release) also pushes the tag and works the same way:
+# the files are attached to that release, its title is kept, and the install notes go above its description.
 name: Release
 
 on:
@@ -60,8 +63,17 @@ jobs:
 
           Provided as is, without maintenance commitment, support SLA or upgrade guarantee; see the [README](https://github.com/${GITHUB_REPOSITORY}/blob/${GITHUB_REF_NAME}/README.md#support-and-maintenance).
           EOF
-          prerelease=()
-          [[ "$VERSION" == *-* ]] && prerelease=(--prerelease)
-          gh release create "$GITHUB_REF_NAME" \
-            target/applitools-jenkins.hpi target/applitools-jenkins.hpi.sha256 \
-            --verify-tag --title "$GITHUB_REF_NAME" --notes-file notes.md --generate-notes "${prerelease[@]}"
+          files=(target/applitools-jenkins.hpi target/applitools-jenkins.hpi.sha256)
+          if existing=$(gh release view "$GITHUB_REF_NAME" --json body -q .body 2>/dev/null); then
+            # Created on GitHub, which pushed this tag: attach the files and keep its title and description.
+            gh release upload "$GITHUB_REF_NAME" "${files[@]}" --clobber
+            if ! grep -qF '**Install:**' <<< "$existing"; then
+              printf '\n%s\n' "$existing" >> notes.md
+              gh release edit "$GITHUB_REF_NAME" --notes-file notes.md
+            fi
+          else
+            prerelease=()
+            [[ "$VERSION" == *-* ]] && prerelease=(--prerelease)
+            gh release create "$GITHUB_REF_NAME" "${files[@]}" \
+              --verify-tag --title "$GITHUB_REF_NAME" --notes-file notes.md --generate-notes "${prerelease[@]}"
+          fi
