@@ -68,6 +68,8 @@ unclassified:
     designers: "team:Tim's Eyes Org, lead@example.com"
     designReviewByDefault: true
     mergeBaselines: false
+    commentOnUnmergedBaselines: false
+    unstableWhileUnmerged: false
     followBranchBuilds: true
     allowForkPullRequests: true
     allowHttp: true

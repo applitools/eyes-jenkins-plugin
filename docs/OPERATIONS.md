@@ -41,6 +41,10 @@ Every outcome (merged, nothing to merge, conflicts, timed out, key refused, or s
 
 On GitHub, the outcome is the **Applitools / Baseline merge** check (or status) on the PR's last tested commit. A merge that's turned off (`mergeBaselines: false`, or globally) is listed on the setup page but not printed in builds.
 
+A merge that **failed** (conflicts, a refused or missing key, a timeout, the PR's build gone) is also listed under **Manage Jenkins → Applitools setup → Unmerged baselines**, kept in `$JENKINS_HOME/io.jenkins.plugins.applitools.review.UnmergedBaselines.xml` until the baselines merge. The PR gets a comment and the `eyes-baselines-not-merged` label, and every build of the target branch retries the merge before its tests, with a failing **Applitools / Baseline merge** check and an unstable result while it still fails. See [Baseline merges and conflicts](BASELINE-MERGES.md).
+
+**Cost of a retry:** one Eyes merge request per unmerged PR per build of its target branch, polled every 5 s for at most 2 minutes, plus a few GitHub calls when the PR's comment changes. Nothing happens in builds whose branch has no unmerged PRs.
+
 ## How polling is bounded
 
 | Fallback | Behavior |
@@ -141,6 +145,7 @@ All other limits are Java system properties, set on the controller's command lin
 | `io.jenkins.plugins.applitools.review.ReviewRegistry.maxAgeDays` | not set | Overrides **Stop following a review after (days)** |
 | `io.jenkins.plugins.applitools.BaselineMerge.timeoutSeconds` | `600` | Longest wait for an Eyes baseline merge |
 | `io.jenkins.plugins.applitools.BaselineMergeNotes.waitSeconds` | `60` | Longest a target-branch build waits, before its tests, for a running baseline merge into its branch |
+| `io.jenkins.plugins.applitools.BaselineMergeAlerts.retryTimeoutSeconds` | `120` | Longest a target-branch build waits for each retried baseline merge |
 | `io.jenkins.plugins.applitools.review.MergeHistory.maxEntries` | `50` | Baseline merge outcomes kept for **Recent baseline merges** and target-branch builds |
 
 The `applitools` step's `resultsTimeout` option (default 300 s) bounds how long a build waits for Eyes to finish rendering.

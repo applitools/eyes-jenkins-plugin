@@ -158,8 +158,8 @@ public class ReviewWatcher extends AsyncPeriodicWork {
                 return true; // its job was just deleted; the merge started then removes it when done
             }
             if (review.isClosed()) {
-                LOGGER.log(Level.WARNING, "Stopped retrying the Eyes baseline merge of {0}#{1}: build {2} #{3} is"
-                        + " gone. Merge its baselines in Eyes (Compare & merge branches).",
+                LOGGER.log(Level.WARNING, "Stopped following {0}#{1}: build {2} #{3} is gone. Builds of the target"
+                        + " branch still retry its Eyes baseline merge.",
                         new Object[] {review.getRepoSlug(), review.getChangeId(), review.getJobFullName(),
                             review.getBuildNumber()});
                 // The earlier failed attempt recorded which branches it was about.
@@ -168,10 +168,11 @@ public class ReviewWatcher extends AsyncPeriodicWork {
                         last != null ? last.getSource() : review.getEyesBranch(),
                         last != null ? last.getTarget() : null,
                         MergeHistory.Outcome.SKIPPED,
-                        "Stopped retrying the baseline merge",
-                        "Build " + review.getJobFullName() + " #" + review.getBuildNumber() + " is gone, so the"
-                                + " failed merge can't be retried. Merge the baselines in Eyes under Compare & merge"
-                                + " branches.");
+                        "PR build gone; target branch builds retry the merge",
+                        "Build " + review.getJobFullName() + " #" + review.getBuildNumber() + " is gone, so a"
+                                + " redelivered webhook can't retry the failed merge. Builds of the target branch"
+                                + " still retry it until it succeeds, or merge the baselines in Eyes under Compare &"
+                                + " merge branches.");
             }
             registry.remove(review);
             return true;

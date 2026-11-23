@@ -8,6 +8,7 @@ import hudson.model.TaskListener;
 import hudson.security.ACL;
 import hudson.security.ACLContext;
 import io.jenkins.plugins.applitools.BaselineMerge;
+import io.jenkins.plugins.applitools.BaselineMergeAlerts;
 import io.jenkins.plugins.applitools.ReviewEvaluator;
 import io.jenkins.plugins.applitools.scm.GitHubRestClient;
 import io.jenkins.plugins.applitools.scm.PullRequestStates;
@@ -359,11 +360,13 @@ public final class ReviewEvents {
             LOGGER.log(Level.WARNING, "{0} merged, but build {1} #{2} is gone, so its Eyes baselines weren''t merged"
                     + " into {3}. Merge them in Eyes (Compare & merge branches).",
                     new Object[] {pr, review.getJobFullName(), review.getBuildNumber(), baseRef});
-            MergeHistory.record(review, null, source, target, MergeHistory.Outcome.SKIPPED,
-                    "Baseline merge skipped: build gone",
-                    "Build " + review.getJobFullName() + " #" + review.getBuildNumber() + " was deleted before the"
-                            + " merge could run, so its credentials are gone. Merge the baselines in Eyes under"
-                            + " Compare & merge branches (" + source + " → " + target + ").");
+            String title = "Baseline merge skipped: build gone";
+            String summary = "Build " + review.getJobFullName() + " #" + review.getBuildNumber() + " was deleted"
+                    + " before the merge could run. The next build of `" + baseRef + "` retries it with its own"
+                    + " credentials, or merge the baselines in Eyes under **Compare & merge branches** (`" + source
+                    + "` → `" + target + "`).";
+            MergeHistory.record(review, null, source, target, MergeHistory.Outcome.SKIPPED, title, summary);
+            BaselineMergeAlerts.outcome(review, null, source, target, MergeHistory.Outcome.SKIPPED, title, summary);
             registry.remove(review);
             return;
         }

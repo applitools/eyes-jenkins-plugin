@@ -187,7 +187,7 @@ public class ReconcileTest {
 
         assertThat(ReviewRegistry.get().all(), empty());
         MergeHistory.Entry last = MergeHistory.get().recent().get(0);
-        assertThat(last.getTitle(), is("Stopped retrying the baseline merge"));
+        assertThat(last.getTitle(), is("PR build gone; target branch builds retry the merge"));
         assertThat(last.getOutcome(), is(MergeHistory.Outcome.SKIPPED));
         assertThat(last.getTarget(), is("acme/web/main")); // from the failed attempt
     }

@@ -4,15 +4,18 @@ import edu.umd.cs.findbugs.annotations.NonNull;
 import hudson.console.HyperlinkNote;
 import hudson.model.InvisibleAction;
 import hudson.model.Run;
+import hudson.model.TaskListener;
 import io.jenkins.plugins.applitools.review.MergeHistory;
 import io.jenkins.plugins.applitools.review.ReviewEvents;
+import io.jenkins.plugins.applitools.review.UnmergedBaselines;
 import java.io.PrintStream;
 import java.util.concurrent.TimeUnit;
 
 /**
  * For a branch build (not a PR): before its tests run, waits a little for baseline merges into its Eyes branch that are
  * still running, so the tests don't compare against baselines without them, then prints every merge into the branch
- * since the branch was last built, including the ones that failed or were skipped and what to do about them.
+ * since the branch was last built, including the ones that failed or were skipped and what to do about them. Then
+ * retries the merges into the branch that haven't happened ({@link BaselineMergeAlerts#retry}).
  */
 final class BaselineMergeNotes {
 
@@ -32,14 +35,24 @@ final class BaselineMergeNotes {
 
     private BaselineMergeNotes() {}
 
-    static void beforeTests(@NonNull Run<?, ?> build, @NonNull String eyesBranch, @NonNull PrintStream log)
+    static void beforeTests(
+            @NonNull Run<?, ?> build,
+            @NonNull String eyesBranch,
+            @NonNull String serverUrl,
+            @NonNull String runCredentialsId,
+            @NonNull TaskListener listener)
             throws InterruptedException {
+        PrintStream log = listener.getLogger();
         waitForRunningMerges(eyesBranch, log);
         long since = shownUpTo(build, eyesBranch);
         long now = System.currentTimeMillis();
         for (MergeHistory.Entry e : MergeHistory.get().into(eyesBranch, since)) {
             if (e.getTime() > now || e.getOutcome() == MergeHistory.Outcome.TURNED_OFF) {
                 continue; // turned off on purpose: not worth a line in every build
+            }
+            if (!e.getOutcome().isOk()
+                    && UnmergedBaselines.get().find(e.getRepoSlug(), e.getPullRequest()) != null) {
+                continue; // still unmerged: retried just below, which says how it stands now
             }
             String what = "Baseline merge from PR #" + e.getPullRequest() + ": " + e.getTitle() + ". "
                     + e.getPlainSummary();
@@ -53,7 +66,9 @@ final class BaselineMergeNotes {
                                 : ""));
             }
         }
-        build.addOrReplaceAction(new Shown(eyesBranch, now));
+        BaselineMergeAlerts.retry(build, eyesBranch, serverUrl, runCredentialsId, listener);
+        // Past the retries, so a merge they recorded isn't printed again by the next build.
+        build.addOrReplaceAction(new Shown(eyesBranch, System.currentTimeMillis()));
     }
 
     private static void waitForRunningMerges(String eyesBranch, PrintStream log) throws InterruptedException {

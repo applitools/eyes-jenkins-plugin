@@ -310,6 +310,8 @@ Everything under `unclassified: applitools:` is optional. Leave out what you don
 | `designReviewLabel` | `design-review` | Design review → Label |
 | `designReviewByDefault` | `false` | Require design review on every pull request |
 | `mergeBaselines` | `true` | Baselines → merge when a pull request merges |
+| `commentOnUnmergedBaselines` | `true` | Baselines → comment on and label a merged pull request whose baselines can't be merged |
+| `unstableWhileUnmerged` | `true` | Baselines → mark target branch builds unstable until those baselines are merged |
 | `followBranchBuilds` | `false` | Advanced → Keep updating results for branch builds |
 | `lockDesignReview` | `false` | Design review → Jenkinsfiles can't loosen design review |
 | `hideReviewers` | `false` | Advanced → Don't name reviewers in pull request results |

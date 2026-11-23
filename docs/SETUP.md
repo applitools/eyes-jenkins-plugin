@@ -11,7 +11,7 @@ When you're done, every pull request gets two checks from Jenkins:
 
 Both checks link straight to the results in Eyes. Accepting changes in Eyes turns them green within about a minute, with no re-run. Making them required in branch protection blocks the merge until then.
 
-When the pull request merges, the plugin merges its Eyes baselines into the target branch, so accepted changes aren't flagged again there. The outcome appears as a third check, **Applitools / Baseline merge**.
+When the pull request merges, the plugin merges its Eyes baselines into the target branch, so accepted changes aren't flagged again there. The outcome appears as a third check, **Applitools / Baseline merge**. If the merge can't happen (baseline conflicts, for example), the PR gets a comment and a label, and the target branch shows a failing check until it's fixed: see [Baseline merges and conflicts](BASELINE-MERGES.md).
 
 Setup takes about 30 minutes. Do the steps in order.
 
@@ -58,7 +58,9 @@ Jenkins talks to GitHub as a GitHub App. This is recommended: results then appea
    | Commit statuses | Read and write |
    | Contents | Read-only |
    | Metadata | Read-only |
-   | Pull requests | Read-only |
+   | Pull requests | Read and write |
+
+   **Pull requests: Read and write** lets the plugin comment on and label a merged PR whose baselines couldn't be merged ([details](BASELINE-MERGES.md#github-permissions)). With Read-only, everything else works, and that warning shows only as a failing check on the target branch.
 
 4. **Subscribe to events:** Check run, Check suite, Pull request, Push, Repository.
 5. **Create the App.** Note the **App ID** (a number at the top of the page). It isn't the Client ID.
@@ -205,7 +207,7 @@ Open a pull request first, so GitHub has seen both checks. Then go to **GitHub �
 - `Applitools / Visual tests`
 - `Applitools / Design review`
 
-Don't require `Applitools / Baseline merge`: it only appears after a pull request merges.
+Don't require `Applitools / Baseline merge`: it only appears after a pull request merges, or on the target branch while a merged PR's baselines aren't merged.
 
 ## 9. Try it
 
@@ -289,8 +291,10 @@ Branch names follow Eyes' `owner/repo/branch` convention, so baselines line up w
 | Playwright: **"Request timed out, likely because it was stuck"**, all sessions aborted | Seen with Eyes NLP enabled in a containerized agent. Workaround: `nlpOptions: { enabled: false }` in `eyesConfig`. |
 | Storybook: **"Failed to launch the browser process"** / `qemu-x86_64-static` | Puppeteer downloaded x86 Chrome on an ARM agent. Set `PUPPETEER_EXECUTABLE_PATH` to the Playwright image's Chromium (see step 7). |
 | Storybook stories missing from the Eyes batch | `eyes-storybook` failed before testing. Its step now fails the build (the plugin uses `nodiffs`, not `false`); look for errors right after "Storybook was started". Use `expectApps` to catch it in the PR check too. |
-| **Baseline merge: "Eyes refused the baseline merge"** | Only **merge** keys can merge baselines (run, read and write keys get HTTP 403). Add one as `applitools-merge-api-key`, then retry: **GitHub App → Advanced → Recent Deliveries**, find the PR's `pull_request` (`closed`) delivery, click **Redeliver**. |
-| **Baseline merge: "N baseline conflicts"** | The same checkpoints also changed on the target branch. Resolve them in Eyes under **Compare & merge branches**. |
+| **Baseline merge: "Eyes refused the baseline merge"** | Only **merge** keys can merge baselines (run, read and write keys get HTTP 403). Add one as `applitools-merge-api-key`. The next build of the target branch retries the merge. |
+| **Baseline merge: "N baseline conflicts"**, or a PR labeled `eyes-baselines-not-merged` | The same checkpoints also changed on the target branch. Resolve them in Eyes under **Compare & merge branches**, then run the target branch's build again: its retry clears the label, the comment and the failing check. See [Baseline merges and conflicts](BASELINE-MERGES.md). |
+| **`main` builds are unstable, with a failing "Baseline merge" check** | A merged PR's baselines aren't merged into `main`. The check and the build's console say which PR and why; **Manage Jenkins → Applitools setup → Unmerged baselines** lists them all. Fix as in [Baseline merges and conflicts](BASELINE-MERGES.md#fixing-it). |
+| **No comment on a PR whose baselines weren't merged** | The GitHub App or token needs **Pull requests: Read and write**. **Manage Jenkins → Applitools setup → Unmerged baselines** shows why it wasn't posted. |
 | **No "Baseline merge" result on a merged PR** | Open **Manage Jenkins → Applitools setup** and look under **Recent baseline merges**: every merge, failure and skip is listed there with what to do (for example, the PR's build was deleted before Jenkins learned the PR merged, or GitHub didn't say its branches). The next build of the target branch also prints it in its console (`[Applitools] Baseline merge from PR #…`). If the PR isn't listed at all, Jenkins never learned it merged: check that GitHub's `closed` webhook reached Jenkins (**GitHub App → Advanced → Recent Deliveries**), and **Manage Jenkins → System Log** for lines about *Eyes baselines*. A Jenkinsfile that set `checks: false` or `waitForResults: false` doesn't follow the PR, so nothing is merged; the build log warns about that. To merge by hand, use Eyes' **Compare & merge branches**: `owner/repo/<PR branch>` → `owner/repo/<target branch>`. |
 | Design review stays waiting after a designer accepted | The changes must be **saved** in Eyes, and the accepting user must be in a designers team (or listed by email). **Manage Jenkins → Applitools setup** shows exactly who counts. |
 | **Design review: "Designers couldn't be determined"** | An Eyes team in Designers wasn't found (check the spelling against Eyes → Admin → Teams), or the read key can't list teams. Nobody can approve until it's fixed. |
@@ -305,7 +309,7 @@ If your multibranch job already connects to GitHub with a personal access token,
 
 What's different:
 - **Credential:** add the token as a **Username with password** credential (username: your GitHub username, password: the token) and select it under **Branch Sources → GitHub → Credentials**. GitHub Branch Source doesn't accept Secret text.
-- **Token permissions:** classic token: `repo` (or `repo:status` plus read access for public repos). Fine-grained token: **Commit statuses: read and write**, **Pull requests: read**, **Contents: read**.
+- **Token permissions:** classic token: `repo` (or `repo:status` plus read access for public repos). Fine-grained token: **Commit statuses: read and write**, **Pull requests: read and write** (read-only works, without the [comment on unmerged baselines](BASELINE-MERGES.md)), **Contents: read**.
 - **Webhook:** without an App, add the webhook to the repo yourself: **repo Settings → Webhooks → Add webhook**, payload URL `https://<your-jenkins>/github-webhook/`, content type `application/json`, the same secret as `github-webhook-secret`. Select **Pull requests** and **Pushes**.
 - **Waiting for review** shows as a yellow *pending* status (there's no "action required" for statuses). It still blocks the merge.
 

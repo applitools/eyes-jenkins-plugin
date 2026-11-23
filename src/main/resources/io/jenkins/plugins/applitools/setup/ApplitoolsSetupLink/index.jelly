@@ -31,6 +31,50 @@
           </tbody>
         </table>
       </j:if>
+      <h2 class="jenkins-!-margin-top-5">Unmerged baselines</h2>
+      <p class="jenkins-description">
+        Merged pull requests whose Eyes baselines aren't merged into their target branch yet. Each build of the target
+        branch retries the merge before its tests; while it fails, that build gets a failing Applitools / Baseline merge
+        check and is marked unstable, and the pull request has a comment and the eyes-baselines-not-merged label.
+        A pull request leaves this list once its baselines merge.
+      </p>
+      <j:set var="unmerged" value="${it.unmergedBaselines}"/>
+      <j:choose>
+        <j:when test="${unmerged.isEmpty()}">
+          <p id="applitools-unmerged-empty">None: every merged pull request's baselines are merged.</p>
+        </j:when>
+        <j:otherwise>
+          <table class="jenkins-table" id="applitools-unmerged">
+            <thead>
+              <tr><th>Since</th><th>Pull request</th><th>Eyes branches</th><th>Why</th><th>What to do</th><th>PR comment</th></tr>
+            </thead>
+            <tbody>
+              <j:forEach var="u" items="${unmerged}">
+                <tr data-outcome="${u.outcome}">
+                  <td data="${u.since}" title="${u.sinceDate}">${h.getTimeSpanString(u.sinceDate)} ago</td>
+                  <td>${u.pullRequestName}</td>
+                  <td>${u.source} → ${u.target}</td>
+                  <td>
+                    <span style="color: var(--warning-color)">
+                      <l:icon src="symbol-warning plugin-ionicons-api" class="icon-sm"/>
+                    </span>
+                    ${u.title}
+                  </td>
+                  <td>${u.plainSummary}</td>
+                  <td>
+                    <j:choose>
+                      <j:when test="${!it.commentOnUnmergedBaselines}">Off (Manage Jenkins → System)</j:when>
+                      <j:when test="${u.commentError != null}">Not posted: ${u.commentError}</j:when>
+                      <j:when test="${u.commented != null}">Posted, labeled</j:when>
+                      <j:otherwise>Not yet: the next build of the target branch posts it</j:otherwise>
+                    </j:choose>
+                  </td>
+                </tr>
+              </j:forEach>
+            </tbody>
+          </table>
+        </j:otherwise>
+      </j:choose>
       <h2 class="jenkins-!-margin-top-5">Recent baseline merges</h2>
       <p class="jenkins-description">
         What happened to each merged pull request's Eyes baselines, newest first (the last 50 are kept): merged, nothing

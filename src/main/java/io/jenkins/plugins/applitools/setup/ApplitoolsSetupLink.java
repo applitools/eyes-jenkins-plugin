@@ -5,6 +5,7 @@ import hudson.Extension;
 import hudson.model.ManagementLink;
 import hudson.security.Permission;
 import io.jenkins.plugins.applitools.review.MergeHistory;
+import io.jenkins.plugins.applitools.review.UnmergedBaselines;
 import jakarta.servlet.ServletException;
 import java.io.IOException;
 import java.util.List;
@@ -47,6 +48,17 @@ public class ApplitoolsSetupLink extends ManagementLink {
     @Override
     public Category getCategory() {
         return Category.STATUS;
+    }
+
+    /** Merged PRs whose Eyes baselines aren't merged yet, for the page's "Unmerged baselines" table. */
+    public List<UnmergedBaselines.Item> getUnmergedBaselines() {
+        Jenkins.get().checkPermission(Jenkins.ADMINISTER);
+        return UnmergedBaselines.get().all();
+    }
+
+    /** Whether PRs with unmerged baselines get a comment and label. */
+    public boolean isCommentOnUnmergedBaselines() {
+        return io.jenkins.plugins.applitools.ApplitoolsGlobalConfiguration.get().isCommentOnUnmergedBaselines();
     }
 
     /** The latest Eyes baseline merge outcomes, newest first, for the page's "Recent baseline merges" table. */

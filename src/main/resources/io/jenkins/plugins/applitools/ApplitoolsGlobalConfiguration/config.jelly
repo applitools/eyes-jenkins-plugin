@@ -57,6 +57,12 @@
       <f:entry field="mergeBaselines">
         <f:checkbox title="When a pull request merges, merge its Eyes baselines into the target branch" default="true" />
       </f:entry>
+      <f:entry field="commentOnUnmergedBaselines">
+        <f:checkbox title="When a merged pull request's baselines can't be merged, comment on it and label it" default="true" />
+      </f:entry>
+      <f:entry field="unstableWhileUnmerged">
+        <f:checkbox title="Mark target branch builds unstable until those baselines are merged" default="true" />
+      </f:entry>
     </f:section>
 
     <f:advanced title="Review polling">

@@ -25,7 +25,8 @@ import org.jenkinsci.plugins.plaincredentials.StringCredentials;
 
 /**
  * Just enough of GitHub's REST API, with a token, for jobs that aren't multibranch: post commit statuses, read a PR's
- * labels and state. Needs no GitHub plugin. Works with GitHub Enterprise through {@code apiUrl}.
+ * labels and state, and keep the plugin's comment and label on a PR whose baselines weren't merged. Needs no GitHub
+ * plugin. Works with GitHub Enterprise through {@code apiUrl}.
  */
 public class GitHubRestClient {
 
@@ -124,6 +125,69 @@ public class GitHubRestClient {
                 response.headers().firstValue("ETag").orElse(null));
     }
 
+    /** Most comments read when looking for the plugin's own on a PR: 3 pages of 100. */
+    private static final int COMMENT_PAGES = 3;
+
+    /**
+     * Posts {@code body} as a comment on a PR or issue, or edits the comment that already contains {@code marker}
+     * (posted earlier by this plugin), so each PR has one comment that stays current. Needs "Pull requests: write".
+     */
+    public void upsertComment(@NonNull String repo, @NonNull String number, @NonNull String marker, @NonNull String body)
+            throws IOException, InterruptedException {
+        String issue = repoPath(repo) + "/issues/" + encode(number);
+        for (int page = 1; page <= COMMENT_PAGES; page++) {
+            JSONArray comments = jsonArray(send(request(issue + "/comments?per_page=100&page=" + page).GET(),
+                    "reading comments of #" + number));
+            for (int i = 0; i < comments.size(); i++) {
+                JSONObject comment = comments.getJSONObject(i);
+                if (comment.optString("body").contains(marker)) {
+                    if (!comment.optString("body").equals(body)) {
+                        send(request(repoPath(repo) + "/issues/comments/" + comment.optLong("id"))
+                                .method("PATCH", HttpRequest.BodyPublishers.ofString(commentJson(body)))
+                                .header("Content-Type", "application/json"), "editing a comment on #" + number);
+                    }
+                    return;
+                }
+            }
+            if (comments.size() < 100) {
+                break;
+            }
+        }
+        send(request(issue + "/comments")
+                .POST(HttpRequest.BodyPublishers.ofString(commentJson(body)))
+                .header("Content-Type", "application/json"), "commenting on #" + number);
+    }
+
+    /** Adds or removes a label on a PR or issue; GitHub creates a label that doesn't exist yet. */
+    public void setLabel(@NonNull String repo, @NonNull String number, @NonNull String label, boolean present)
+            throws IOException, InterruptedException {
+        String labels = repoPath(repo) + "/issues/" + encode(number) + "/labels";
+        if (present) {
+            JSONObject body = new JSONObject();
+            body.put("labels", JSONArray.fromObject(new String[] {label}));
+            send(request(labels)
+                    .POST(HttpRequest.BodyPublishers.ofString(body.toString()))
+                    .header("Content-Type", "application/json"), "labeling #" + number);
+            return;
+        }
+        // 404: the label wasn't there, so there's nothing to remove.
+        send(request(labels + "/" + encode(label).replace("+", "%20")).DELETE(), "unlabeling #" + number, 404);
+    }
+
+    private static String commentJson(String body) {
+        JSONObject json = new JSONObject();
+        json.put("body", body);
+        return json.toString();
+    }
+
+    private static JSONArray jsonArray(HttpResponse<String> response) throws IOException {
+        try {
+            return JSONArray.fromObject(response.body());
+        } catch (JSONException e) {
+            throw new IOException("GitHub returned an unexpected response (HTTP " + response.statusCode() + ")");
+        }
+    }
+
     private HttpRequest.Builder request(String path) throws IOException {
         return HttpRequest.newBuilder(URI.create(ServerUrls.check(apiUrl, "The GitHub API URL") + path))
                 .timeout(TIMEOUT)
@@ -135,6 +199,12 @@ public class GitHubRestClient {
 
     private static HttpResponse<String> send(HttpRequest.Builder request, String what)
             throws IOException, InterruptedException {
+        return send(request, what, 304);
+    }
+
+    /** Sends a request; any 2xx, or {@code alsoFine}, is a success. */
+    private static HttpResponse<String> send(HttpRequest.Builder request, String what, int alsoFine)
+            throws IOException, InterruptedException {
         lastCallAt = System.currentTimeMillis();
         HttpResponse<String> response;
         try {
@@ -143,7 +213,7 @@ public class GitHubRestClient {
             lastError = what + ": " + e.getMessage();
             throw e;
         }
-        if (response.statusCode() / 100 != 2 && response.statusCode() != 304) {
+        if (response.statusCode() / 100 != 2 && response.statusCode() != 304 && response.statusCode() != alsoFine) {
             lastError = what + ": GitHub returned HTTP " + response.statusCode()
                     + (response.statusCode() == 401 || response.statusCode() == 403 || response.statusCode() == 404
                             ? " (check the token and its access to the repository)"
