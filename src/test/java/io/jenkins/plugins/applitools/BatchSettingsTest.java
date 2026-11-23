@@ -33,6 +33,8 @@ class BatchSettingsTest {
 
         BatchSettings batch = BatchSettings.compute(scm, "web/main", 7, BatchSettings.Overrides.NONE);
 
+        // Not the PR build's batch: one commit is often built both ways at once.
+        assertThat(batch.batchId(), is(SHA + "-main"));
         assertThat(batch.batchName(), is("timhosey/web main"));
         assertThat(batch.branchName(), is("timhosey/web/main"));
         assertThat(batch.parentBranchName(), nullValue());
